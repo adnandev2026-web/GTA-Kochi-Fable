@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: gta-world
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: MONGODB_URI
+        sync: false
+      - key: COOKIE_SECRET
+        generateValue: true

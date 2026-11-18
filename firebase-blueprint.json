@@ -1,0 +1,104 @@
+{
+  "entities": {
+    "PlayerProfile": {
+      "title": "PlayerProfile",
+      "description": "Authenticated player profile, appearance customization, owned vehicles, home plot, and wallet state.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the player.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Google account display name.",
+          "maxLength": 80
+        },
+        "characterName": {
+          "type": "string",
+          "description": "In-game player character name.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "deviceMode": {
+          "type": "string",
+          "enum": ["mobile", "laptop", "desktop"],
+          "description": "Selected device control and HUD mode."
+        },
+        "cityId": {
+          "type": "string",
+          "description": "Last selected city map identifier.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "homeId": {
+          "type": "string",
+          "description": "Selected home plot identifier on the map.",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "money": {
+          "type": "number",
+          "description": "Current wallet balance."
+        },
+        "ownedVehicles": {
+          "type": "array",
+          "description": "List of owned vehicle type IDs."
+        },
+        "selectedVehicle": {
+          "type": "string",
+          "description": "Primary vehicle spawned at the player's home.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "playTimeSeconds": {
+          "type": "number",
+          "description": "Cumulative active play time in seconds."
+        },
+        "finesTotal": {
+          "type": "number",
+          "description": "Cumulative police fines paid."
+        },
+        "tollsTotal": {
+          "type": "number",
+          "description": "Cumulative highway/bridge tolls paid."
+        },
+        "appearance": {
+          "type": "object",
+          "description": "Character appearance options (skin, face, hat, mustache, beard, shirt, overcoat, pants, shoes)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of profile creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "uid",
+        "characterName",
+        "deviceMode",
+        "cityId",
+        "homeId",
+        "money",
+        "ownedVehicles",
+        "selectedVehicle",
+        "playTimeSeconds",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/players/{userId}": {
+      "schema": { "$ref": "#/entities/PlayerProfile" },
+      "description": "Private owner-scoped player save profile."
+    }
+  }
+}

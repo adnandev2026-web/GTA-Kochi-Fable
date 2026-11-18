@@ -75,6 +75,11 @@ export class RenderPipeline {
     this.maxScale = quality.pixelRatio;
     this._frameTimes = [];
     this._sinceAdjust = 0;
+
+    const gl = r.getContext();
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    const rendererStr = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '';
+    this.isSoftwareGl = /SwiftShader|llvmpipe|Software/i.test(rendererStr);
   }
 
   init(scene, camera) {
@@ -83,14 +88,15 @@ export class RenderPipeline {
     const size = new THREE.Vector2(window.innerWidth, window.innerHeight);
     const gl = this.renderer.getContext();
     const maxSamples = gl.getParameter(gl.MAX_SAMPLES) || 0;
+    const samples = this.isSoftwareGl ? 0 : Math.min(this.quality.msaa, maxSamples);
     const target = new THREE.WebGLRenderTarget(size.x, size.y, {
       type: THREE.HalfFloatType,
-      samples: Math.min(this.quality.msaa, maxSamples),
+      samples,
       depthBuffer: true,
     });
     this.composer = new EffectComposer(this.renderer, target);
     this.composer.addPass(new RenderPass(scene, camera));
-    if (this.quality.bloom) {
+    if (this.quality.bloom && !this.isSoftwareGl) {
       this.bloom = new UnrealBloomPass(size.clone().multiplyScalar(0.5), 0.2, 0.5, 2.8);
       this.composer.addPass(this.bloom);
     }
@@ -98,10 +104,12 @@ export class RenderPipeline {
     this.grade = new ShaderPass(GradeShader);
     this.composer.addPass(this.grade);
     this.resize();
-    window.addEventListener('resize', () => this.resize());
+    this._onResize = () => this.resize();
+    window.addEventListener('resize', this._onResize);
   }
 
   resize() {
+    if (!this.composer) return;
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.renderer.setPixelRatio(this.scale);
@@ -136,5 +144,11 @@ export class RenderPipeline {
     this.grade.uniforms.uSpeed.value = speedFactor;
     this.renderer.info.reset();
     this.composer.render(dt);
+  }
+
+  dispose() {
+    if (this._onResize) window.removeEventListener('resize', this._onResize);
+    this.composer?.dispose();
+    this.renderer?.dispose();
   }
 }

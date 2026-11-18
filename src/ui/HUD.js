@@ -1,19 +1,11 @@
-// Heads-up display: minimap, speedometer, interaction prompt, district banner, big map.
+// Heads-up display: minimap, speedometer, interaction prompt, district banner, big map, POIs & multiplayer blips.
 
-import { WORLD, ZONES, LANDMARKS, NODES } from '../world/layout.js';
+import { WORLD, ZONES, LANDMARKS, NODES, CITY_POIS } from '../world/layout.js';
 import { SURF } from '../world/SurfaceMap.js';
 import { SIGN_FONT } from '../core/Assets.js';
 
 const $ = (id) => document.getElementById(id);
-const MAP_SCALE = 0.5; // map pixels per metre
-
-const POIS = [
-  { key: 'lulu', label: 'LuLu Mall', ml: 'ലുലു മാൾ', icon: '🛍' },
-  { key: 'stadium', label: 'JLN Stadium', ml: 'കലൂർ സ്റ്റേഡിയം', icon: '🏟' },
-  { key: 'hub', label: 'Vyttila Mobility Hub', ml: 'വൈറ്റില ഹബ്', icon: '🚌' },
-  { key: 'forum', label: 'Forum Kochi', ml: 'ഫോറം', icon: '🛒' },
-  { key: 'brototype', label: 'Brototype', ml: 'ബ്രോട്ടോടൈപ്പ്', icon: '💻' },
-];
+const MAP_SCALE = 0.5;
 
 export class HUD {
   constructor(game) {
@@ -52,12 +44,36 @@ export class HUD {
     this.arc = 377;
     this._lastSpeed = -1;
     this._buildMap();
-    this.el.bigCanvas.addEventListener('click', (e) => this._mapClick(e));
+    this._onBigClick = (e) => this._mapClick(e);
+    this.el.bigCanvas.addEventListener('click', this._onBigClick);
   }
 
-  // ------------------------------------------------------------------------------ map
   toMap(x, z) {
     return [(x - this.mapMinX) * MAP_SCALE, (z - this.mapMinZ) * MAP_SCALE];
+  }
+
+  _collectPois() {
+    const list = [];
+    const home = (CITY_POIS.homes || []).find((h) => h.id === CITY_POIS.selectedHomeId) || CITY_POIS.homes?.[0];
+    if (home) {
+      list.push({ key: 'home', label: 'Your Home', icon: '🏠', color: '#10b981', worldX: home.x, worldZ: home.z });
+    }
+    for (const [key, lm] of Object.entries(LANDMARKS)) {
+      list.push({ key, label: lm.name, icon: '★', color: '#ffd34d', worldX: lm.p[0], worldZ: lm.p[1] });
+    }
+    for (const s of CITY_POIS.schools || []) {
+      list.push({ key: s.id, label: s.name, icon: 'S', color: '#facc15', worldX: s.x, worldZ: s.z });
+    }
+    for (const p of CITY_POIS.petrolPumps || []) {
+      list.push({ key: p.id, label: p.name, icon: 'P', color: '#ef4444', worldX: p.x, worldZ: p.z });
+    }
+    for (const pol of CITY_POIS.policeStations || []) {
+      list.push({ key: pol.id, label: pol.name, icon: '🚓', color: '#3b82f6', worldX: pol.x, worldZ: pol.z });
+    }
+    for (const t of CITY_POIS.tollGates || []) {
+      list.push({ key: t.id, label: t.name, icon: '$', color: '#f97316', worldX: t.x, worldZ: t.z });
+    }
+    return list;
   }
 
   _buildMap() {
@@ -71,7 +87,6 @@ export class HUD {
     c.width = w;
     c.height = h;
     const ctx = c.getContext('2d');
-    // Base raster from the surface map (2x2 metre blocks).
     const img = ctx.createImageData(w, h);
     const colours = {
       [SURF.LAND]: [38, 56, 44],
@@ -101,7 +116,6 @@ export class HUD {
     }
     ctx.putImageData(img, 0, 0);
 
-    // Roads as clean vector strokes.
     const stroke = (pts, width, colour, dash = null) => {
       ctx.beginPath();
       pts.forEach((p, i) => {
@@ -151,7 +165,6 @@ export class HUD {
     }
     this.mapBase = c;
 
-    // Labelled version for the big map.
     const big = document.createElement('canvas');
     big.width = w;
     big.height = h;
@@ -161,44 +174,43 @@ export class HUD {
     b.textBaseline = 'middle';
     for (const z of ZONES) {
       const [x, y] = this.toMap(z.p[0], z.p[1]);
-      b.font = `700 15px ${SIGN_FONT}`;
+      b.font = `700 13px ${SIGN_FONT}`;
       b.lineWidth = 4;
       b.strokeStyle = 'rgba(0,0,0,0.75)';
-      b.fillStyle = 'rgba(255,255,255,0.88)';
-      b.strokeText(z.name, x + 46, y - 30);
-      b.fillText(z.name, x + 46, y - 30);
+      b.fillStyle = 'rgba(255,255,255,0.86)';
+      b.strokeText(z.name, x + 36, y - 24);
+      b.fillText(z.name, x + 36, y - 24);
     }
     this.poiHits = [];
-    for (const p of POIS) {
-      const lm = LANDMARKS[p.key];
-      const [x, y] = this.toMap(lm.p[0], lm.p[1]);
-      b.fillStyle = '#ffd34d';
+    for (const p of this._collectPois()) {
+      const [x, y] = this.toMap(p.worldX, p.worldZ);
+      b.fillStyle = p.color;
       b.strokeStyle = '#111';
-      b.lineWidth = 3;
+      b.lineWidth = 2.5;
       b.beginPath();
-      b.arc(x, y, 13, 0, Math.PI * 2);
+      b.arc(x, y, 10, 0, Math.PI * 2);
       b.fill();
       b.stroke();
-      b.font = '15px sans-serif';
+      b.font = 'bold 11px sans-serif';
       b.fillStyle = '#111';
       b.fillText(p.icon, x, y + 1);
-      b.font = `700 17px ${SIGN_FONT}`;
-      b.lineWidth = 5;
-      b.strokeStyle = 'rgba(0,0,0,0.85)';
-      b.fillStyle = '#ffd34d';
-      b.strokeText(p.label, x, y + 27);
-      b.fillText(p.label, x, y + 27);
-      this.poiHits.push({ x, y, key: p.key, label: p.label });
+      b.font = `700 13px ${SIGN_FONT}`;
+      b.lineWidth = 4;
+      b.strokeStyle = 'rgba(0,0,0,0.88)';
+      b.fillStyle = p.color;
+      b.strokeText(p.label, x, y + 20);
+      b.fillText(p.label, x, y + 20);
+      this.poiHits.push({ x, y, key: p.key, label: p.label, color: p.color, worldX: p.worldX, worldZ: p.worldZ });
     }
     for (const id in NODES) {
       const n = NODES[id];
       if (!n.toward) continue;
       const [x, y] = this.toMap(n.p[0], n.p[1]);
-      b.font = `700 12px ${SIGN_FONT}`;
+      b.font = `700 11px ${SIGN_FONT}`;
       b.lineWidth = 3;
       b.strokeStyle = 'rgba(0,0,0,0.8)';
       b.fillStyle = 'rgba(190,230,255,0.9)';
-      const tx = Math.max(90, Math.min(w - 90, x));
+      const tx = Math.max(85, Math.min(w - 85, x));
       const ty = Math.max(14, Math.min(h - 14, y));
       b.strokeText(`→ ${n.toward}`, tx, ty);
       b.fillText(`→ ${n.toward}`, tx, ty);
@@ -220,34 +232,48 @@ export class HUD {
     ctx.fillStyle = '#1d2a26';
     ctx.fillRect(0, 0, size, size);
     const [mx, my] = this.toMap(px, pz);
-    // Rotate so that the camera's forward direction points up.
     ctx.translate(size / 2, size / 2);
     ctx.rotate(yaw - Math.PI);
     ctx.scale(zoom, zoom);
     ctx.translate(-mx, -my);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(this.mapBase, 0, 0);
-    // Landmark pips.
+
     for (const p of this.poiHits) {
-      ctx.fillStyle = '#ffd34d';
+      ctx.fillStyle = p.color || '#ffd34d';
       ctx.strokeStyle = '#111';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, p.key === 'home' ? 6 : 4.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
-    // Traffic blips.
+
     const traffic = this.game.traffic;
     if (traffic) {
-      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fillStyle = 'rgba(255,255,255,0.72)';
       for (const v of traffic.active) {
         const [x, y] = this.toMap(v.x, v.z);
         ctx.fillRect(x - 1.2, y - 1.2, 2.4, 2.4);
       }
     }
+
+    // Multiplayer peers in bright cyan
+    const peers = this.game.multiplayer?.peers;
+    if (peers) {
+      for (const peer of peers.values()) {
+        const [x, y] = this.toMap(peer.pos.x, peer.pos.z);
+        ctx.fillStyle = '#38bdf8';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x, y, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    // Player arrow.
     ctx.translate(size / 2, size / 2);
     ctx.rotate(yaw - Math.PI - heading + Math.PI);
     ctx.fillStyle = '#fff';
@@ -275,6 +301,22 @@ export class HUD {
   _drawBigMap() {
     const ctx = this.el.bigCanvas.getContext('2d');
     ctx.drawImage(this.mapBig, 0, 0);
+
+    // Draw remote multiplayer players
+    const peers = this.game.multiplayer?.peers;
+    if (peers) {
+      for (const peer of peers.values()) {
+        const [px, py] = this.toMap(peer.pos.x, peer.pos.z);
+        ctx.fillStyle = '#38bdf8';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(px, py, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
     const p = this.game.player.pos;
     const [x, y] = this.toMap(p.x, p.z);
     ctx.fillStyle = '#fff';
@@ -300,12 +342,11 @@ export class HUD {
       }
     }
     if (best) {
-      this.game.fastTravel(best.key);
+      this.game.fastTravel(best);
       this.toggleMap(false);
     }
   }
 
-  // ---------------------------------------------------------------------------- widgets
   prompt(text) {
     if (text === this.promptShown) return;
     this.promptShown = text;
@@ -351,7 +392,6 @@ export class HUD {
       }
     }
 
-    // District banner.
     let zone = null;
     let best = Infinity;
     for (const z of ZONES) {
@@ -394,10 +434,16 @@ export class HUD {
     if (this.fpsTime >= 0.5) {
       const fps = Math.round(this.frames / this.fpsTime);
       const info = g.renderer.info.render;
-      this.el.fps.textContent = `${fps} fps · ${info.calls} calls · ${(info.triangles / 1000).toFixed(0)}k tris · ${g.pipeline.scale.toFixed(2)}x`;
+      this.el.fps.textContent = `${fps} fps · ${info.calls} calls · ${(info.triangles / 1000).toFixed(0)}k tris`;
       this.frames = 0;
       this.fpsTime = 0;
     }
+  }
+
+  dispose() {
+    this.el.bigCanvas?.removeEventListener('click', this._onBigClick);
+    this.el.hud?.classList.add('hidden');
+    this.el.bigmap?.classList.add('hidden');
   }
 }
 

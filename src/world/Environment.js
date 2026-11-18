@@ -1,6 +1,7 @@
 // Sky, sun, image based lighting and haze: a humid Kochi afternoon around 4 pm.
 
 import * as THREE from 'three';
+import { CITY_POIS } from './layout.js';
 
 // Direction *towards* the sun on the ground plane. West-south-west, as it is over
 // Kochi in the late afternoon (+X east, +Z south).
@@ -10,6 +11,7 @@ export class Environment {
   constructor(scene, renderer, assets, quality) {
     this.scene = scene;
     this.quality = quality;
+    const theme = CITY_POIS.theme || {};
     const sky = assets.sky;
 
     const found = sky ? findSun(sky) : { dir: new THREE.Vector3(0.5, 0.65, 0.3).normalize() };
@@ -35,14 +37,14 @@ export class Environment {
       scene.environmentRotation.set(0, theta, 0);
       scene.environmentIntensity = 1.35;
     } else {
-      scene.background = new THREE.Color(0xa9c4d8);
+      scene.background = new THREE.Color(theme.skyTint ?? 0xa9c4d8);
     }
 
-    // Tropical haze: warm, slightly milky.
-    this.fogColor = new THREE.Color(0xc3cdd0);
-    scene.fog = new THREE.FogExp2(this.fogColor, 0.00122);
+    // City atmosphere haze.
+    this.fogColor = new THREE.Color(theme.fogColor ?? 0xc3cdd0);
+    scene.fog = new THREE.FogExp2(this.fogColor, theme.fogDensity ?? 0.00122);
 
-    this.sun = new THREE.DirectionalLight(0xffe2bd, 3.0);
+    this.sun = new THREE.DirectionalLight(theme.sunColor ?? 0xffe2bd, theme.sunIntensity ?? 3.0);
     this.sun.castShadow = true;
     const size = quality.shadowSize;
     this.sun.shadow.mapSize.set(size, size);

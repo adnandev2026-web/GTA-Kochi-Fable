@@ -1,4 +1,4 @@
-// Game bootstrap and main loop.
+// Game bootstrap, dynamic city launcher, economy events (playtime rewards, fines, tolls, fuel), and multiplayer sync.
 
 import * as THREE from 'three';
 import { chooseQuality } from './core/Quality.js';
@@ -8,17 +8,16 @@ import { Input } from './core/Input.js';
 import { CameraController } from './core/CameraController.js';
 import { AudioManager } from './core/AudioManager.js';
 import { World } from './world/World.js';
-import { SPAWN, WORLD, LANDMARKS, NODES, EXIT_BUFFER } from './world/layout.js';
+import { setActiveCityLayout, SPAWN, WORLD, LANDMARKS, NODES, EXIT_BUFFER, CITY_POIS } from './world/layout.js';
 import { VehicleRenderer } from './entities/vehicles/VehicleRenderer.js';
 import { VehicleManager } from './entities/VehicleManager.js';
 import { Player } from './entities/Player.js';
 import { Traffic } from './entities/Traffic.js';
 import { Pedestrians } from './entities/Pedestrians.js';
+import { MultiplayerManager } from './entities/MultiplayerManager.js';
 import { HUD } from './ui/HUD.js';
 import { clamp, saturate } from './utils/math.js';
 
-// Resolves on the next frame, or after a short timeout when the tab is in the background
-// (requestAnimationFrame does not fire for hidden tabs and loading must not stall).
 const nextFrame = () =>
   new Promise((resolve) => {
     let done = false;
@@ -31,18 +30,25 @@ const nextFrame = () =>
     setTimeout(finish, 60);
   });
 
-// Where fast travel drops the player for each landmark: [east, north, heading].
-const TRAVEL = {
-  brototype: null, // filled in from the spawn point
-  forum: [6, -652, -Math.PI / 2],
-  hub: [168, 46, Math.PI / 2],
-  stadium: [-716, 640, Math.PI / 2],
-  lulu: [-262, 1600, -Math.PI / 2],
-};
-
 export class Game {
-  constructor(canvas) {
+  constructor(canvas, config = {}) {
     this.canvas = canvas;
+    this.config = {
+      cityId: config.cityId || 'kochi',
+      homeId: config.homeId || '',
+      vehicleId: config.vehicleId || 'hatchback',
+      ownedVehicles: config.ownedVehicles || ['hatchback', 'scooter', 'auto'],
+      appearance: config.appearance || null,
+      playerName: config.playerName || 'Explorer',
+      deviceMode: config.deviceMode || 'desktop',
+      multiplayerEnabled: config.multiplayerEnabled !== false,
+      uid: config.uid || 'guest',
+      onMoneyEvent: config.onMoneyEvent || (() => {}),
+      onPeersChange: config.onPeersChange || (() => {}),
+      onChatMessage: config.onChatMessage || (() => {}),
+      onReady: config.onReady || (() => {}),
+    };
+
     this.params = new URLSearchParams(location.search);
     this.quality = chooseQuality();
     this.pipeline = new RenderPipeline(canvas, this.quality);
@@ -53,57 +59,98 @@ export class Game {
     this.time = 0;
     this.running = false;
     this.paused = false;
-    this.focus = new THREE.Vector3(SPAWN.p[0], 0, SPAWN.p[1]);
+    this._disposed = false;
     this.input = new Input(canvas);
+    this.input.setDeviceMode(this.config.deviceMode);
     this.audio = new AudioManager();
     this._obstacles = [];
     this._pool = [];
     this._poolUsed = 0;
     this._nearby = [];
+
+    // Economy timers & cooldown maps
+    this._playBonusAccum = 0;
+    this._zoneCooldowns = new Map();
+    this._crashFineCooldown = 0;
   }
 
   async start() {
+    setActiveCityLayout(this.config.cityId, this.config.homeId);
+    this.focus = new THREE.Vector3(SPAWN.p[0], 0, SPAWN.p[1]);
+
+    const loading = document.getElementById('loading');
     const bar = document.getElementById('bar-fill');
     const status = document.getElementById('loading-status');
+    const loadingTitle = document.getElementById('loading-title');
+    const loadingMl = document.getElementById('loading-ml');
+    const loadingSub = document.getElementById('loading-sub');
+    const startBtn = document.getElementById('start');
+
+    if (loading) loading.classList.remove('hidden', 'fade');
+    if (startBtn) startBtn.classList.add('hidden');
+    if (loadingTitle) loadingTitle.textContent = (CITY_POIS.cityName || 'KOCHI').toUpperCase();
+    if (loadingMl) loadingMl.textContent = CITY_POIS.cityMl || '';
+    if (loadingSub) loadingSub.textContent = `Loading ${CITY_POIS.cityName} · Homes · Schools · Petrol · Police · Tolls`;
+
     const setProgress = (p, label) => {
-      bar.style.width = `${Math.round(p * 100)}%`;
-      if (label) status.textContent = label;
+      if (bar) bar.style.width = `${Math.round(p * 100)}%`;
+      if (status && label) status.textContent = label;
     };
 
     this.assets = new Assets(this.renderer, this.quality);
     await this.assets.load((p, label) => setProgress(p * 0.4, `Loading ${label}`));
+    if (this._disposed) return;
 
     this.world = new World(this.scene, this.renderer, this.assets, this.quality, this);
     const steps = [...this.world.steps()];
     for (let i = 0; i < steps.length; i++) {
+      if (this._disposed) return;
       const [label, fn] = steps[i];
       setProgress(0.4 + (i / steps.length) * 0.5, label);
       await nextFrame();
       await fn();
     }
+    if (this._disposed) return;
 
-    setProgress(0.92, 'Parking the cars');
+    setProgress(0.92, 'Parking your vehicles at Home');
     await nextFrame();
     this.vehicles = new VehicleRenderer(this.scene, this.assets);
     this.vehicleManager = new VehicleManager(this);
-    // Start on the Brototype forecourt, looking at the building.
-    const home = this.world.city.landmarks.brototypeFrame;
-    const spot = home ? home.P(3.5, 0, 9.5 + 16) : [SPAWN.p[0], 0, SPAWN.p[1]];
-    const facing = home ? Math.atan2(-home.fx, -home.fz) : SPAWN.heading;
-    this.spawn = { x: spot[0], z: spot[2], heading: facing };
-    this.player = new Player(this, spot[0], spot[2], facing);
+
+    const home = (CITY_POIS.homes || []).find((h) => h.id === CITY_POIS.selectedHomeId) || CITY_POIS.homes?.[0];
+    const spawnX = home ? home.x : SPAWN.p[0];
+    const spawnZ = home ? home.z : SPAWN.p[1];
+    const spawnHeading = home ? home.heading : SPAWN.heading;
+    this.spawn = { x: spawnX, z: spawnZ, heading: spawnHeading };
+
+    this.player = new Player(this, spawnX, spawnZ, spawnHeading);
+    if (this.config.appearance) {
+      this.player.character.applyAppearance(this.config.appearance);
+    }
+
     this.cameraController = new CameraController(this.camera, this);
-    this.cameraController.snapBehind(facing);
-    this.cameraController.pitch = -0.1; // look up at the sign
-    await this.world.populate?.(this);
+    this.cameraController.snapBehind(spawnHeading);
+    this.cameraController.pitch = -0.08;
+
+    await this.world.populate(this, this.config.vehicleId, this.config.ownedVehicles);
     this.traffic = new Traffic(this);
     this.traffic.populate(this.player.pos);
     this.pedestrians = new Pedestrians(this);
     this.hud = new HUD(this);
 
+    this.multiplayer = new MultiplayerManager(this, {
+      enabled: this.config.multiplayerEnabled,
+      cityId: this.config.cityId,
+      uid: this.config.uid,
+      playerName: this.config.playerName,
+      appearance: this.config.appearance,
+      onPeersChange: this.config.onPeersChange,
+      onChatMessage: this.config.onChatMessage,
+    });
+    this.multiplayer.connect();
+
     this.pipeline.init(this.scene, this.camera);
-    // Compile shaders up front so the first seconds of play are smooth.
-    setProgress(0.97, 'Warming up');
+    setProgress(0.97, 'Warming up shaders');
     await nextFrame();
     this.cameraController.update(0.016, this.input);
     try {
@@ -111,36 +158,34 @@ export class Game {
     } catch (e) {
       console.warn('[game] shader precompile skipped', e);
     }
+    if (this._disposed) return;
     setProgress(1, 'Ready');
 
     this.running = true;
     this.renderer.setAnimationLoop(() => this.frame());
-    document.getElementById('hud').classList.remove('hidden');
-    const startBtn = document.getElementById('start');
-    const loading = document.getElementById('loading');
-    const begin = () => {
+    document.getElementById('hud')?.classList.remove('hidden');
+    if (loading) {
       loading.classList.add('fade');
-      this.audio.start();
-      this.audio.resume();
-      this.input.requestLock();
-      setTimeout(() => loading.remove(), 900);
-    };
-    if (this.params.has('autostart')) begin();
-    else {
-      startBtn.classList.remove('hidden');
-      status.textContent = 'Kundannoor · outside Brototype';
-      startBtn.addEventListener('click', begin, { once: true });
+      setTimeout(() => loading.classList.add('hidden'), 650);
     }
+    this.audio.start();
+    this.audio.resume();
+    if (this.config.deviceMode !== 'mobile') {
+      this.input.requestLock();
+    }
+    this.hud.toast(`Welcome home to ${home?.name || CITY_POIS.cityName}! Your ${this.config.vehicleId} is parked outside.`, 4.5);
+    this.config.onReady();
   }
 
-  // ---------------------------------------------------------------------------- loop
   frame() {
+    if (this._disposed) return;
     this.timer.update();
     const dt = Math.min(this.timer.getDelta(), 0.05);
     this.step(dt);
   }
 
   step(dt) {
+    if (this._disposed) return;
     this.time += dt;
     const input = this.input;
     this._handleKeys();
@@ -158,9 +203,11 @@ export class Game {
       }
       player.update(dt, input, this.cameraController.moveYaw);
       this._checkExits(dt);
+      this._checkEconomyZones(dt);
       this.vehicleManager.update(dt, player.pos);
       this.traffic?.update(dt, player.pos);
       this.pedestrians?.update(dt, player.pos);
+      this.multiplayer?.update(dt);
       if (!this.debugView) this.cameraController.update(dt, input);
       this._updatePrompt();
       this.focus.copy(player.pos);
@@ -175,6 +222,75 @@ export class Game {
     this.pipeline.adapt(dt);
     this.pipeline.render(dt, speedFx);
     input.endFrame();
+  }
+
+  _checkEconomyZones(dt) {
+    // 1. Playtime income bonus (+$25 every 10 seconds of active play)
+    this._playBonusAccum += dt;
+    if (this._playBonusAccum >= 10) {
+      this._playBonusAccum = 0;
+      this.config.onMoneyEvent('play_bonus', 25, 'Active Exploration Bonus');
+    }
+
+    // Tick cooldowns
+    this._crashFineCooldown = Math.max(0, this._crashFineCooldown - dt);
+    for (const [k, t] of this._zoneCooldowns) {
+      if (t - dt <= 0) this._zoneCooldowns.delete(k);
+      else this._zoneCooldowns.set(k, t - dt);
+    }
+
+    const pos = this.player.pos;
+    const v = this.player.vehicle;
+    const kmh = v ? Math.abs(v.kmh) : 0;
+
+    // 2. Toll Gates (-$40 when driving through)
+    if (v) {
+      for (const toll of CITY_POIS.tollGates || []) {
+        if (this._zoneCooldowns.has(toll.id)) continue;
+        if (Math.hypot(pos.x - toll.x, pos.z - toll.z) < 16) {
+          this._zoneCooldowns.set(toll.id, 18);
+          const fee = toll.fee || 40;
+          this.config.onMoneyEvent('toll', fee, `${toll.name} Toll`);
+          this.hud.toast(`Toll paid at ${toll.name}: -$${fee}`, 3);
+        }
+      }
+    }
+
+    // 3. Police Stations (Speeding > 48 km/h within 45m -> -$120 fine)
+    if (v && kmh > 48) {
+      for (const pol of CITY_POIS.policeStations || []) {
+        if (this._zoneCooldowns.has(pol.id)) continue;
+        if (Math.hypot(pos.x - pol.x, pos.z - pol.z) < 45) {
+          this._zoneCooldowns.set(pol.id, 20);
+          this.config.onMoneyEvent('fine', 120, `Speeding near ${pol.name}`);
+          this.hud.toast(`POLICE FINE at ${pol.name}: -$120 (${Math.round(kmh)} km/h)`, 3.5);
+        }
+      }
+    }
+
+    // 4. School Zones (Speeding > 35 km/h within 42m -> -$100 fine)
+    if (v && kmh > 35) {
+      for (const sch of CITY_POIS.schools || []) {
+        if (this._zoneCooldowns.has(sch.id)) continue;
+        if (Math.hypot(pos.x - sch.x, pos.z - sch.z) < 42) {
+          this._zoneCooldowns.set(sch.id, 20);
+          this.config.onMoneyEvent('fine', 100, `School Zone Speeding (${sch.name})`);
+          this.hud.toast(`SCHOOL ZONE FINE (${sch.name}): -$100`, 3.5);
+        }
+      }
+    }
+
+    // 5. Petrol Pumps (Refuel when pulled in slowly < 18 km/h -> -$30)
+    if (v && kmh < 18) {
+      for (const pump of CITY_POIS.petrolPumps || []) {
+        if (this._zoneCooldowns.has(pump.id)) continue;
+        if (Math.hypot(pos.x - pump.x, pos.z - pump.z) < 14) {
+          this._zoneCooldowns.set(pump.id, 28);
+          this.config.onMoneyEvent('fuel', 30, `Refueled at ${pump.name}`);
+          this.hud.toast(`Tank refueled at ${pump.name}: -$30`, 3);
+        }
+      }
+    }
   }
 
   _handleKeys() {
@@ -209,11 +325,10 @@ export class Game {
     }
   }
 
-  /** Nearest vehicle the player could get into: parked ones first, then slow traffic. */
   findVehicle() {
     const p = this.player;
-    let v = this.vehicleManager.nearest(p.pos, 2.3);
-    if (!v && this.traffic) v = this.traffic.claim(p.pos, 2.3);
+    let v = this.vehicleManager.nearest(p.pos, 2.5);
+    if (!v && this.traffic) v = this.traffic.claim(p.pos, 2.5);
     return v;
   }
 
@@ -225,7 +340,7 @@ export class Game {
     }
     this._promptTimer = (this._promptTimer || 0) + 1;
     if (this._promptTimer % 6 !== 0) return;
-    const v = this.vehicleManager.nearest(p.pos, 2.3) || this.traffic?.peek(p.pos, 2.3);
+    const v = this.vehicleManager.nearest(p.pos, 2.5) || this.traffic?.peek(p.pos, 2.5);
     this.hud.prompt(v ? `${v.twoWheeler ? 'Ride' : 'Drive'} ${v.spec.label}` : null);
   }
 
@@ -233,7 +348,6 @@ export class Game {
     const v = this.player.vehicle;
     v.vx = v.vz = v.vf = v.vl = v.vy = 0;
     v.pitch = v.roll = 0;
-    // Put it back on the nearest lane.
     const lane = this.traffic?.nearestLanePoint(v.pos.x, v.pos.z);
     if (lane) {
       v.pos.set(lane.x, lane.y + 0.2, lane.z);
@@ -244,30 +358,43 @@ export class Game {
   }
 
   cycleTravel() {
-    const keys = Object.keys(TRAVEL);
-    this._travelIndex = ((this._travelIndex ?? 0) + 1) % keys.length;
-    this.fastTravel(keys[this._travelIndex]);
+    const pois = this.hud.poiHits || [];
+    if (!pois.length) return;
+    this._travelIndex = ((this._travelIndex ?? -1) + 1) % pois.length;
+    this.fastTravel(pois[this._travelIndex]);
   }
 
-  fastTravel(key) {
-    const t = key === 'brototype' ? [this.spawn.x, -this.spawn.z, this.spawn.heading] : TRAVEL[key];
-    if (!t) return;
-    const [east, north, heading] = t;
+  fastTravel(target) {
+    let x = this.spawn.x;
+    let z = this.spawn.z;
+    let label = 'Home';
+    if (typeof target === 'string') {
+      if (target === 'home') {
+        x = this.spawn.x;
+        z = this.spawn.z;
+        label = 'Your Home';
+      } else if (LANDMARKS[target]) {
+        x = LANDMARKS[target].p[0];
+        z = LANDMARKS[target].p[1] + 22;
+        label = LANDMARKS[target].name;
+      }
+    } else if (target && typeof target === 'object') {
+      x = target.worldX;
+      z = target.worldZ + 14;
+      label = target.label || 'Location';
+    }
     const v = this.player.vehicle;
     if (v) {
-      v.pos.set(east, this.world.ground.height(east, -north, 60, 100), -north);
-      v.heading = heading;
+      v.pos.set(x, this.world.ground.height(x, z, 60, 100), z);
       v.vx = v.vz = v.vf = v.vl = 0;
       v.sync();
     } else {
-      this.player.teleport(east, -north, heading);
+      this.player.teleport(x, z, this.spawn.heading);
     }
-    this.cameraController.snapBehind(heading);
-    this.hud.toast(`Fast travel · ${LANDMARKS[key].name}`);
+    this.cameraController.snapBehind(this.player.heading);
+    this.hud.toast(`Fast travel · ${label}`);
   }
 
-  // ------------------------------------------------------------------------- services
-  /** Dynamic collision circles near a point (vehicles, pedestrians). Reuses objects. */
   obstaclesNear(x, z, range, exclude) {
     const out = this._obstacles;
     out.length = 0;
@@ -283,10 +410,6 @@ export class Game {
     return out;
   }
 
-  /**
-   * The roads carry on into the haze, but the miniature ends: anyone who reaches the limit
-   * of a road is turned round and pointed back at the city.
-   */
   _checkExits(dt) {
     this._exitCooldown = Math.max(0, (this._exitCooldown || 0) - dt);
     if (this._exitCooldown > 0) return;
@@ -297,14 +420,12 @@ export class Game {
       if (!n.exit) continue;
       const d = Math.hypot(pos.x - n.p[0], pos.z - n.p[1]);
       if (d > EXIT_BUFFER) continue;
-      // Face back down the road, a little way inside the limit.
       const node = this.world.roads.nodes[id];
       const arm = node.arms[0];
       const f = this.world.roads.armFrame(arm, EXIT_BUFFER + 40);
       const heading = Math.atan2(f.tx, f.tz);
       const lane = f.rx * 5.85;
       const lanez = f.rz * 5.85;
-      // Left-hand traffic: heading away from the exit we keep to the arm's left.
       const x = f.x - lane;
       const z = f.z - lanez;
       if (v) {
@@ -320,12 +441,11 @@ export class Game {
         this.player.teleport(x, z, heading);
       }
       this.cameraController.snapBehind(heading);
-      this.hud.toast(`${node.arms[0].edge.name} carries on to ${n.toward} — this miniature ends here`, 4.5);
+      this.hud.toast(`${node.arms[0].edge.name} leads toward ${n.toward} — turning back`, 4);
       this.flash();
       this._exitCooldown = 3;
       return;
     }
-    // Off-road wanderers are simply kept inside the map.
     const m = 30;
     if (v) {
       const cx = clamp(v.pos.x, WORLD.minX + m, WORLD.maxX - m);
@@ -353,9 +473,6 @@ export class Game {
       el.style.transition = 'opacity .7s ease';
       el.style.opacity = '0';
     });
-    setTimeout(() => {
-      el.style.opacity = '0';
-    }, 80);
   }
 
   clampToWorld(pos) {
@@ -367,126 +484,38 @@ export class Game {
   onImpact(strength) {
     this.audio.crash(strength);
     this.cameraController.addShake(clamp(strength / 25, 0.1, 0.8));
+    if (strength > 24 && this._crashFineCooldown <= 0 && this.player?.vehicle) {
+      this._crashFineCooldown = 10;
+      this.config.onMoneyEvent('fine', 75, 'Traffic Collision Fine');
+      this.hud?.toast('Reckless Crash Fine: -$75', 2.8);
+    }
   }
 
   currentRoadName() {
     return this.world.roadNameAt?.(this.player.pos.x, this.player.pos.z) || '';
   }
 
-  // ------------------------------------------------------------------ debug helpers
-  /** Place the camera for screenshots: look from (x,y,z) at (tx,ty,tz). */
-  view(x, y, z, tx, ty, tz) {
-    this.debugView = true;
-    this.camera.position.set(x, y, z);
-    this.camera.lookAt(tx, ty, tz);
-    this.camera.updateMatrixWorld();
-    this.world.update(0, this.focus.set(tx, 0, tz), this.camera);
-  }
-
-  /** view() + render, for automated screenshots. Pass hud=false to hide the overlay. */
-  shot(x, y, z, tx, ty, tz, hud = false) {
-    document.getElementById('hud').style.visibility = hud ? 'visible' : 'hidden';
-    this.view(x, y, z, tx, ty, tz);
-    if (this.world.culler) this.world.culler.timer = 0;
-    if (this.pipeline.scale !== this.pipeline.maxScale) {
-      this.pipeline.scale = this.pipeline.maxScale;
-      this.pipeline.resize();
+  dispose() {
+    this._disposed = true;
+    this.running = false;
+    this.renderer.setAnimationLoop(null);
+    this.multiplayer?.dispose();
+    this.hud?.dispose();
+    this.world?.dispose();
+    this.input?.dispose();
+    try {
+      this.audio?.ctx?.close();
+    } catch {
+      // ignore
     }
-    this.pipeline._frameTimes.length = 0;
-    for (let i = 0; i < 3; i++) this.step(1 / 60);
-    const info = this.renderer.info.render;
-    return { calls: info.calls, tris: info.triangles };
-  }
-
-  /** Back to the gameplay camera. */
-  play() {
-    this.debugView = false;
-    document.getElementById('hud').style.visibility = 'visible';
-  }
-
-  /**
-   * Test helper: put the player in a car on `edgeId` and drive it along the lane for
-   * `seconds` of simulated time. Returns a log of speed / position samples.
-   */
-  testDrive(edgeId, dir = 1, laneIndex = 0, seconds = 20, type = 'hatchback', startAt = 20) {
-    const roads = this.world.roads;
-    let lane = roads.edgeById[edgeId].lanePaths[dir][laneIndex];
-    const s = {};
-    lane.sample(startAt, s);
-    if (this.player.vehicle) this.player.exit();
-    const v = this.vehicleManager.spawn(type, s.x, s.z, Math.atan2(s.tx, s.tz), 0x1f3f78);
-    v.pos.y = s.y + 0.1;
-    this.player.enter(v);
-    this.hud.setDriving(v);
-    this.cameraController.snapBehind(v.heading);
-    this.debugView = false;
-    document.getElementById('hud').style.visibility = 'visible';
-    let d = startAt;
-    const log = [];
-    const dt = 1 / 60;
-    const input = this.input;
-    let worst = 0;
-    let total = 0;
-    this.pipeline.quality.dynamicResolution = false;
-    this.pipeline.scale = this.pipeline.maxScale;
-    this.pipeline.resize();
-    for (let i = 0; i < seconds * 60; i++) {
-      // Project onto the lane and aim at a point ahead of the car.
-      let best = Infinity;
-      for (let k = -4; k <= 30; k++) {
-        const dd = d + k;
-        if (dd < 0 || dd > lane.length) continue;
-        lane.sample(dd, s);
-        const e = (s.x - v.pos.x) ** 2 + (s.z - v.pos.z) ** 2;
-        if (e < best) {
-          best = e;
-          this._autoD = dd;
-        }
+    this.scene.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
+        else obj.material.dispose();
       }
-      d = this._autoD;
-      if (d > lane.length - 3 && lane.next.length) {
-        const straight = lane.next.find((n) => n.turn === 'S') || lane.next[0];
-        lane = straight.path;
-        d = 0;
-      }
-      const look = Math.min(lane.length, d + 9 + Math.abs(v.vf) * 0.55);
-      lane.sample(look, s);
-      const want = Math.atan2(s.x - v.pos.x, s.z - v.pos.z);
-      let err = want - v.heading;
-      while (err > Math.PI) err -= Math.PI * 2;
-      while (err < -Math.PI) err += Math.PI * 2;
-      input.keys.clear();
-      if (err > 0.04) input.keys.add('KeyA');
-      else if (err < -0.04) input.keys.add('KeyD');
-      if (v.kmh < 95) input.keys.add('KeyW');
-      const t0 = performance.now();
-      this.step(dt);
-      if (i % 4 === 0) this.renderer.getContext().finish();
-      const ms = performance.now() - t0;
-      worst = Math.max(worst, ms);
-      total += ms;
-      if (i % 120 === 0) log.push({ t: i / 60, kmh: Math.round(v.kmh), x: Math.round(v.pos.x), y: +v.pos.y.toFixed(1), z: Math.round(v.pos.z), off: +Math.sqrt(best).toFixed(1) });
-    }
-    input.keys.clear();
-    return { log, avgFrameMs: +(total / (seconds * 60)).toFixed(2), worstFrameMs: Math.round(worst), size: [this.renderer.domElement.width, this.renderer.domElement.height], calls: this.renderer.info.render.calls, tris: this.renderer.info.render.triangles };
-  }
-
-  /** Line up one of every vehicle for inspection. */
-  showcase(x = 0, z = 0, yaw = 0.6) {
-    const types = ['hatchback', 'sedan', 'suv', 'auto', 'ksrtc', 'bus', 'motorcycle_r', 'scooter_r', 'motorcycle', 'scooter'];
-    const colours = [0x9a1414, 0xf2f2ee, 0x1f3f78, 0x141414, 0xffffff, 0x2a63b8, 0x16171a, 0x9a1414, 0x1f3f78, 0xc8a21a];
-    let off = 0;
-    this._showcase = this._showcase || [];
-    for (const v of this._showcase) v.dispose();
-    this._showcase = [];
-    types.forEach((t, i) => {
-      const v = this.vehicles.create(t, colours[i]);
-      const w = v.model.size.width;
-      off += w / 2 + 0.9;
-      v.update(x + off, 0.03, z, yaw, 0, 0, 0.3, 0);
-      off += w / 2 + 0.9;
-      this._showcase.push(v);
     });
-    return off;
+    this.pipeline?.dispose?.();
+    document.getElementById('loading')?.classList.add('hidden');
   }
 }

@@ -374,13 +374,13 @@ export class Landmarks {
 
   // ----------------------------------------------------------------------------- build
   build() {
-    this._lulu();
-    this._forum();
-    this._stadium();
-    this._hub();
-    this._brototype();
-    this._crowne();
-    this._minorMalls();
+    if (LANDMARKS.lulu) this._lulu();
+    if (LANDMARKS.forum) this._forum();
+    if (LANDMARKS.stadium) this._stadium();
+    if (LANDMARKS.hub) this._hub();
+    if (LANDMARKS.brototype) this._brototype();
+    if (LANDMARKS.crowne) this._crowne();
+    if (LANDMARKS.lulu) this._minorMalls();
   }
 
   // ============================================================================= LuLu

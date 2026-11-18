@@ -2,9 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Kochi — Miniature Open World</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌴</text></svg>" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>GTA World — Open World Multiplayer</title>
+    <meta
+      name="description"
+      content="Open-world 3D GTA experience across Kochi, Pookkottumpadam, Trivandrum, Kozhikkode, New York, Dubai, London, and Tokyo with live multiplayer."
+    />
+    <meta property="og:title" content="GTA World — Open World Multiplayer" />
+    <meta
+      property="og:description"
+      content="Customize your character, choose your home and vehicle, and explore Kerala and famous world cities in 3D."
+    />
+    <link rel="icon" type="image/jpeg" href="/favicon.jpg" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -65,20 +74,22 @@
 
     <div id="bigmap" class="hidden">
       <canvas id="bigmap-canvas"></canvas>
-      <div id="bigmap-hint">Click a landmark to fast travel · <kbd>M</kbd> / <kbd>Esc</kbd> to close</div>
+      <div id="bigmap-hint">Click a landmark, home, school, pump or station to fast travel · <kbd>M</kbd> / <kbd>Esc</kbd> to close</div>
     </div>
 
-    <div id="loading">
+    <div id="loading" class="hidden">
       <div class="loading-inner">
-        <div class="loading-ml">കൊച്ചി</div>
-        <div class="loading-title">KOCHI</div>
-        <div class="loading-sub">Miniature Open World · Kundannoor — Vyttila — Kaloor — Edappally</div>
+        <div id="loading-ml" class="loading-ml"></div>
+        <div id="loading-title" class="loading-title">GTA WORLD</div>
+        <div id="loading-sub" class="loading-sub">Loading Open World...</div>
         <div class="bar"><div id="bar-fill"></div></div>
-        <div id="loading-status">Loading…</div>
+        <div id="loading-status">Initializing...</div>
         <button id="start" class="hidden">Click to play</button>
       </div>
     </div>
 
-    <script type="module" src="/src/main.js"></script>
+    <div id="root"></div>
+
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
