@@ -8,7 +8,10 @@ import { Input } from './core/Input.js';
 import { CameraController } from './core/CameraController.js';
 import { AudioManager } from './core/AudioManager.js';
 import { World } from './world/World.js';
-import { setActiveCityLayout, SPAWN, WORLD, LANDMARKS, NODES, EXIT_BUFFER, CITY_POIS } from './world/layout.js';
+import { setActiveCityLayout, applyOsmLayout, SPAWN, WORLD, LANDMARKS, NODES, EXIT_BUFFER, CITY_POIS } from './world/layout.js';
+import { fetchCityOsmApi } from './lib/api.ts';
+import { getCityConfig } from './config/cityConfigs.ts';
+import { WeaponSystem } from './combat/WeaponSystem.js';
 import { VehicleRenderer } from './entities/vehicles/VehicleRenderer.js';
 import { VehicleManager } from './entities/VehicleManager.js';
 import { Player } from './entities/Player.js';
@@ -42,10 +45,16 @@ export class Game {
       playerName: config.playerName || 'Explorer',
       deviceMode: config.deviceMode || 'desktop',
       multiplayerEnabled: config.multiplayerEnabled !== false,
+      roomCode: config.roomCode || 'GLOBAL',
+      roomName: config.roomName || '',
+      roomIsPrivate: Boolean(config.roomIsPrivate),
       uid: config.uid || 'guest',
       onMoneyEvent: config.onMoneyEvent || (() => {}),
       onPeersChange: config.onPeersChange || (() => {}),
       onChatMessage: config.onChatMessage || (() => {}),
+      onWeaponChange: config.onWeaponChange || (() => {}),
+      onToggleWeaponWheel: config.onToggleWeaponWheel || (() => {}),
+      onVoiceStatus: config.onVoiceStatus || (() => {}),
       onReady: config.onReady || (() => {}),
     };
 
@@ -75,8 +84,7 @@ export class Game {
   }
 
   async start() {
-    setActiveCityLayout(this.config.cityId, this.config.homeId);
-    this.focus = new THREE.Vector3(SPAWN.p[0], 0, SPAWN.p[1]);
+    const cityCfg = getCityConfig(this.config.cityId);
 
     const loading = document.getElementById('loading');
     const bar = document.getElementById('bar-fill');
@@ -88,17 +96,38 @@ export class Game {
 
     if (loading) loading.classList.remove('hidden', 'fade');
     if (startBtn) startBtn.classList.add('hidden');
-    if (loadingTitle) loadingTitle.textContent = (CITY_POIS.cityName || 'KOCHI').toUpperCase();
-    if (loadingMl) loadingMl.textContent = CITY_POIS.cityMl || '';
-    if (loadingSub) loadingSub.textContent = `Loading ${CITY_POIS.cityName} · Homes · Schools · Petrol · Police · Tolls`;
+    if (loadingTitle) loadingTitle.textContent = (cityCfg.name || 'KOCHI').toUpperCase();
+    if (loadingMl) loadingMl.textContent = cityCfg.localName || '';
+    if (loadingSub) loadingSub.textContent = `Streaming ${cityCfg.regionLabel} · OpenStreetMap Roads & Buildings`;
 
     const setProgress = (p, label) => {
       if (bar) bar.style.width = `${Math.round(p * 100)}%`;
       if (status && label) status.textContent = label;
     };
 
+    setProgress(0.05, `Fetching OpenStreetMap data for ${cityCfg.name}...`);
+    let osmData = null;
+    if (this.config.cityId !== 'kochi') {
+      osmData = await Promise.race([
+        fetchCityOsmApi(this.config.cityId)
+          .then((r) => r?.osm || null)
+          .catch(() => null),
+        new Promise((resolve) => setTimeout(() => resolve(null), 6500)),
+      ]);
+    }
+    if (this._disposed) return;
+
+    applyOsmLayout(this.config.cityId, this.config.homeId, osmData);
+    this.focus = new THREE.Vector3(SPAWN.p[0], 0, SPAWN.p[1]);
+    if (loadingSub) {
+      const roadCount = osmData?.edges?.length || 0;
+      loadingSub.textContent = roadCount > 4
+        ? `${cityCfg.name} · ${roadCount} OSM Roads · Bilingual Signage · Real Spawn`
+        : `${cityCfg.name} · Homes · Schools · Petrol · Police · Tolls`;
+    }
+
     this.assets = new Assets(this.renderer, this.quality);
-    await this.assets.load((p, label) => setProgress(p * 0.4, `Loading ${label}`));
+    await this.assets.load((p, label) => setProgress(0.08 + p * 0.34, `Loading ${label}`));
     if (this._disposed) return;
 
     this.world = new World(this.scene, this.renderer, this.assets, this.quality, this);
@@ -131,6 +160,7 @@ export class Game {
     this.cameraController = new CameraController(this.camera, this);
     this.cameraController.snapBehind(spawnHeading);
     this.cameraController.pitch = -0.08;
+    this.weaponSystem = new WeaponSystem(this);
 
     await this.world.populate(this, this.config.vehicleId, this.config.ownedVehicles);
     this.traffic = new Traffic(this);
@@ -141,11 +171,15 @@ export class Game {
     this.multiplayer = new MultiplayerManager(this, {
       enabled: this.config.multiplayerEnabled,
       cityId: this.config.cityId,
+      roomCode: this.config.roomCode || 'GLOBAL',
+      roomName: this.config.roomName || '',
+      isPrivate: Boolean(this.config.roomIsPrivate),
       uid: this.config.uid,
       playerName: this.config.playerName,
       appearance: this.config.appearance,
       onPeersChange: this.config.onPeersChange,
       onChatMessage: this.config.onChatMessage,
+      onVoiceStatus: this.config.onVoiceStatus,
     });
     this.multiplayer.connect();
 
@@ -202,6 +236,7 @@ export class Game {
         this.audio.setHorn(false);
       }
       player.update(dt, input, this.cameraController.moveYaw);
+      this.weaponSystem?.update(dt);
       this._checkExits(dt);
       this._checkEconomyZones(dt);
       this.vehicleManager.update(dt, player.pos);
@@ -304,6 +339,33 @@ export class Game {
     if (input.hit('F1')) this.hud.toggleControls();
     if (input.hit('KeyT')) this.cycleTravel();
     if (input.hit('KeyR') && this.player.vehicle) this.resetVehicle();
+    if (input.hit('Digit1')) this.selectWeapon('unarmed');
+    if (input.hit('Digit2')) this.selectWeapon('pistol');
+    if (input.hit('Digit3')) this.selectWeapon('rifle');
+    if (input.hit('Digit4')) this.selectWeapon('sniper');
+    if (input.hit('KeyQ') || input.hit('Tab')) this.config.onToggleWeaponWheel?.();
+    if (input.hit('KeyV')) this.cycleSniperZoom();
+  }
+
+  selectWeapon(weaponId) {
+    this.weaponSystem?.selectWeapon(weaponId);
+  }
+
+  cycleSniperZoom() {
+    this.weaponSystem?.cycleSniperZoom(1);
+  }
+
+  setVoiceMuted(muted) {
+    return this.multiplayer?.setVoiceMuted?.(muted);
+  }
+
+  setVoiceProximity(enabled) {
+    this.multiplayer?.setVoiceProximity?.(enabled);
+  }
+
+  setPaused(paused) {
+    this.paused = !!paused;
+    if (paused) this.input.exitLock();
   }
 
   interact() {
@@ -424,8 +486,9 @@ export class Game {
       const arm = node.arms[0];
       const f = this.world.roads.armFrame(arm, EXIT_BUFFER + 40);
       const heading = Math.atan2(f.tx, f.tz);
-      const lane = f.rx * 5.85;
-      const lanez = f.rz * 5.85;
+      const ts = CITY_POIS.trafficSide === 'right' ? -1 : 1;
+      const lane = f.rx * 5.85 * ts;
+      const lanez = f.rz * 5.85 * ts;
       const x = f.x - lane;
       const z = f.z - lanez;
       if (v) {
@@ -499,6 +562,7 @@ export class Game {
     this._disposed = true;
     this.running = false;
     this.renderer.setAnimationLoop(null);
+    this.weaponSystem?.dispose?.();
     this.multiplayer?.dispose();
     this.hud?.dispose();
     this.world?.dispose();

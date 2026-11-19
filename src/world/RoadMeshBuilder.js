@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { ChunkSet } from '../utils/ChunkSet.js';
 import { SURF } from './SurfaceMap.js';
 import { buildRoadMaterials } from './RoadTextures.js';
-import { ROAD_CLASSES, FLYOVER_DECK_HALF, laneOffset } from './layout.js';
+import { CITY_POIS, ROAD_CLASSES, FLYOVER_DECK_HALF, laneOffset } from './layout.js';
 import { STOP_LINE_SETBACK } from './RoadNetwork.js';
 import { clamp, lerp, smoothstep } from '../utils/math.js';
 
@@ -299,12 +299,13 @@ export class RoadMeshBuilder {
       if (arm.edge.fly[arm.end] && Math.abs(a) < FLYOVER_DECK_HALF + 0.3) continue;
       this._decalQuad(fz.x + fz.rx * a, fz.z + fz.rz * a, fz.tx, fz.tz, 0.27, 1.6, d.zebra);
     }
-    // Stop line across the approaching carriageway (the arm's right-hand side looking outward).
+    // Stop line across the approaching carriageway.
+    const ts = CITY_POIS.trafficSide === 'right' ? -1 : 1;
     const fs = roads.armFrame(arm, arm.trim + STOP_LINE_SETBACK);
     const inner = arm.edge.fly[arm.end] ? FLYOVER_DECK_HALF + 0.6 : m + 0.1;
     const outer = arm.half - spec.shoulder;
     const mid = (inner + outer) / 2;
-    this._decalQuad(fs.x + fs.rx * mid, fs.z + fs.rz * mid, fs.tx, fs.tz, (outer - inner) / 2, 0.22, d.stop);
+    this._decalQuad(fs.x + fs.rx * mid * ts, fs.z + fs.rz * mid * ts, fs.tx, fs.tz, (outer - inner) / 2, 0.22, d.stop);
     // Lane arrows pointing at the junction.
     const fa = roads.armFrame(arm, arm.trim + STOP_LINE_SETBACK + 9);
     const lanes = [];
@@ -314,11 +315,11 @@ export class RoadMeshBuilder {
       lanes.push(i);
     }
     lanes.forEach((i, k) => {
-      const off = laneOffset(e.cls, i);
+      const off = laneOffset(e.cls, i) * ts;
       let kind = 'S';
-      if (k === lanes.length - 1 && lanes.length > 1) kind = 'SL';
-      if (lanes.length === 1) kind = 'SL';
-      this._decalQuad(fa.x + fa.rx * off, fa.z + fa.rz * off, -fa.tx, -fa.tz, 0.62, 2.3, d.arrows[kind]);
+      if (k === lanes.length - 1 && lanes.length > 1) kind = ts === 1 ? 'SL' : 'SR';
+      if (lanes.length === 1) kind = ts === 1 ? 'SL' : 'SR';
+      this._decalQuad(fa.x + fa.rx * off, fa.z + fa.rz * off, -fa.tx, -fa.tz, 0.62, 2.3, d.arrows[kind] || d.arrows.S);
     });
   }
 

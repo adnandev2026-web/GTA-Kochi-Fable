@@ -3,11 +3,18 @@
 // Coordinates are Three.js world metres (+X = east, +Z = south).
 
 import { CITIES_CATALOG } from '../shared/catalog.ts';
+import { getCityConfig } from '../config/cityConfigs.ts';
+
+const kochiCfg = getCityConfig('kochi');
 
 export const KOCHI_EXTRA_POIS = {
   cityId: 'kochi',
   cityName: 'Kochi',
   cityMl: 'കൊച്ചി',
+  trafficSide: kochiCfg.trafficSide,
+  language: kochiCfg.language,
+  signTranslations: kochiCfg.signTranslations,
+  osmBuildings: [],
   theme: {
     skyTint: 0xa9c4d8,
     fogColor: 0xc3cdd0,
@@ -117,7 +124,8 @@ function makeStandardGridCity({
     LANDMARKS[lm.id] = { p: [lm.x, lm.z], rot: lm.rot || 0, name: lm.name };
   }
 
-  return {
+    const cfg = getCityConfig(id);
+    return {
     cityId: id,
     cityName: name,
     cityMl: localLabel,
@@ -139,6 +147,10 @@ function makeStandardGridCity({
       cityId: id,
       cityName: name,
       cityMl: localLabel,
+      trafficSide: cfg.trafficSide,
+      language: cfg.language,
+      signTranslations: cfg.signTranslations,
+      osmBuildings: [],
       theme,
       schools,
       petrolPumps,

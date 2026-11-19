@@ -15,10 +15,14 @@ export class Input {
     this.sensitivity = 0.0023;
     this.lastMouseMove = 0;
 
-    // Virtual mobile controls
+    // Virtual mobile controls & combat buttons
     this.virtualMoveX = 0;
     this.virtualMoveY = 0;
     this.virtualSprint = false;
+    this.mouseLeft = false;
+    this.mouseRight = false;
+    this.virtualFire = false;
+    this.virtualAim = false;
     this._touchLookId = null;
     this._touchLastX = 0;
     this._touchLastY = 0;
@@ -35,7 +39,13 @@ export class Input {
     this._onKeyUp = (e) => {
       this.keys.delete(e.code);
     };
-    this._onBlur = () => this.keys.clear();
+    this._onBlur = () => {
+      this.keys.clear();
+      this.mouseLeft = false;
+      this.mouseRight = false;
+      this.virtualFire = false;
+      this.virtualAim = false;
+    };
     this._onPointerLock = () => {
       this.locked = document.pointerLockElement === this.canvas;
     };
@@ -48,11 +58,22 @@ export class Input {
     };
     this._onMouseDown = (e) => {
       if (!this.enabled) return;
-      if (e.button === 0 && this.allowPointerLock) this.requestLock();
+      if (e.button === 0) {
+        this.mouseLeft = true;
+        if (this.allowPointerLock) this.requestLock();
+      } else if (e.button === 2) {
+        this.mouseRight = true;
+      }
       this.dragging = true;
     };
-    this._onMouseUp = () => {
-      this.dragging = false;
+    this._onMouseUp = (e) => {
+      if (e?.button === 0) this.mouseLeft = false;
+      else if (e?.button === 2) this.mouseRight = false;
+      else {
+        this.mouseLeft = false;
+        this.mouseRight = false;
+      }
+      this.dragging = this.mouseLeft || this.mouseRight;
     };
     this._onWheel = (e) => {
       this.wheel += Math.sign(e.deltaY);
@@ -126,6 +147,17 @@ export class Input {
     this.virtualSprint = sprint;
   }
 
+  addLookDelta(dx, dy) {
+    this.mouseDX += dx;
+    this.mouseDY += dy;
+    this.lastMouseMove = performance.now();
+  }
+
+  setCombatButtons({ fire, aim } = {}) {
+    if (fire !== undefined) this.virtualFire = !!fire;
+    if (aim !== undefined) this.virtualAim = !!aim;
+  }
+
   triggerKey(code, isDown = true) {
     if (isDown) {
       this.keys.add(code);
@@ -169,6 +201,14 @@ export class Input {
 
   get sprint() {
     return this.virtualSprint || this.down('ShiftLeft') || this.down('ShiftRight');
+  }
+
+  get fire() {
+    return this.mouseLeft || this.virtualFire;
+  }
+
+  get aim() {
+    return this.mouseRight || this.virtualAim;
   }
 
   endFrame() {

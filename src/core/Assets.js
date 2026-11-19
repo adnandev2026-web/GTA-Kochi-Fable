@@ -32,7 +32,7 @@ const FONTS = [
   ['Noto Sans Devanagari', 'noto-sans-devanagari-devanagari-700-normal.woff2', '700', null],
 ];
 
-export const SIGN_FONT = '"Anek Malayalam", "Noto Sans Malayalam", "Noto Sans Devanagari", "Helvetica Neue", Arial, sans-serif';
+export const SIGN_FONT = '"Anek Malayalam", "Noto Sans Malayalam", "Noto Sans Devanagari", "Noto Sans JP", "Noto Sans Arabic", "Helvetica Neue", Arial, sans-serif';
 
 export class Assets {
   constructor(renderer, quality) {
@@ -141,6 +141,8 @@ export class Assets {
       await Promise.all([
         document.fonts.load(`700 32px "Anek Malayalam"`, 'കൊച്ചി Kochi'),
         document.fonts.load(`700 32px "Noto Sans Devanagari"`, 'कोच्चि'),
+        document.fonts.load(`700 32px "Noto Sans JP"`, '東京渋谷'),
+        document.fonts.load(`700 32px "Noto Sans Arabic"`, 'دبي مارينا'),
       ]);
     } catch (e) {
       console.warn('[assets] font warmup failed', e);

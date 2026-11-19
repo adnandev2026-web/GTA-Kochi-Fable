@@ -4,6 +4,8 @@
 
 import { VEHICLES, TRAFFIC_MIX, baseType } from './vehicles/specs.js';
 import { STOP_LINE_SETBACK } from '../world/RoadNetwork.js';
+import { CITY_POIS } from '../world/layout.js';
+import { getCityConfig } from '../config/cityConfigs.ts';
 import { RNG } from '../utils/rng.js';
 import { clamp, damp, angleDiff } from '../utils/math.js';
 
@@ -76,16 +78,24 @@ export class Traffic {
   // ------------------------------------------------------------------------ spawning
   _pickType(lane) {
     const e = lane.edge;
-    for (let tries = 0; tries < 6; tries++) {
-      const t = this.rng.weighted(TRAFFIC_MIX);
-      const heavy = VEHICLES[baseType(t)].heavy;
-      if (heavy && e.cls === 'street') continue;
-      // Buses keep to the outer lanes, autos stay off the flyovers.
-      if (heavy && lane.inner) continue;
+    const cfg = getCityConfig(CITY_POIS.cityId || 'kochi');
+    const mix = (cfg && cfg.trafficMix && cfg.trafficMix.length ? cfg.trafficMix : TRAFFIC_MIX).filter(
+      ([id]) => !!VEHICLES[baseType(id)],
+    );
+    const activeMix = mix.length ? mix : TRAFFIC_MIX;
+    for (let tries = 0; tries < 8; tries++) {
+      let t = this.rng.weighted(activeMix);
+      if (t === 'motorcycle') t = 'motorcycle_r';
+      else if (t === 'scooter') t = 'scooter_r';
+      const spec = VEHICLES[baseType(t)];
+      if (!spec) continue;
+      if (spec.heavy && e.cls === 'street') continue;
+      if (spec.heavy && lane.inner) continue;
       if (baseType(t) === 'auto' && lane.inner && lane.edge.cls === 'highway') continue;
       return t;
     }
-    return 'hatchback';
+    const fallback = activeMix.find(([id]) => !VEHICLES[baseType(id)]?.heavy)?.[0] || 'hatchback';
+    return fallback === 'motorcycle' ? 'motorcycle_r' : fallback === 'scooter' ? 'scooter_r' : fallback;
   }
 
   _chooseNext(path) {

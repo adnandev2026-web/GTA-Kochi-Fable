@@ -4,7 +4,7 @@
 
 import { frame } from '../CityBuilder.js';
 import { SURF } from '../SurfaceMap.js';
-import { LANDMARKS, PLACE_NAMES, NODES, P } from '../layout.js';
+import { LANDMARKS, PLACE_NAMES, NODES, P, CITY_POIS } from '../layout.js';
 import { FLOOR, BAY } from '../FacadeTextures.js';
 import { SignSheets, board, buildLandmarkLayers } from './textures.js';
 import { fitText, font } from '../../utils/canvas.js';
@@ -236,9 +236,29 @@ export class Landmarks {
     for (const [id, lines] of dirs) {
       s.add(id, 512, 230, (c, w, h) => board(c, w, h, { bg: '#0c6b3d', fg: '#fff', border: '#fff', radius: 12, lines: lines.map((t) => ({ text: t })) }));
     }
-    s.add('busStop', 256, 96, (c, w, h) => board(c, w, h, { bg: '#1456a0', fg: '#fff', lines: [{ text: 'ബസ് സ്റ്റോപ്പ്', size: 1.1 }, { text: 'BUS STOP', size: 0.7 }], radius: 6 }));
-    s.add('autoStand', 256, 96, (c, w, h) => board(c, w, h, { bg: '#f2c313', fg: '#111', lines: [{ text: 'ഓട്ടോ സ്റ്റാൻഡ്', size: 1.1 }, { text: 'AUTO STAND', size: 0.7 }], radius: 6 }));
-    s.add('welcome', 512, 140, (c, w, h) => board(c, w, h, { bg: '#0b5f8a', fg: '#fff', border: '#fff', lines: [{ text: 'കൊച്ചിയിലേക്ക് സ്വാഗതം', size: 1.1 }, { text: 'WELCOME TO KOCHI', size: 0.8 }] }));
+    const tr = CITY_POIS.signTranslations || {};
+    const busParts = String(tr.busStop || 'BUS STOP').split('·').map((p) => p.trim());
+    const welcomeParts = String(tr.welcome || `WELCOME TO ${(CITY_POIS.cityName || 'KOCHI').toUpperCase()}`).split('·').map((p) => p.trim());
+    s.add('busStop', 256, 96, (c, w, h) =>
+      board(c, w, h, {
+        bg: '#1456a0',
+        fg: '#fff',
+        lines: busParts.length > 1 ? [{ text: busParts[0], size: 1.0 }, { text: busParts[1], size: 0.7 }] : [{ text: busParts[0], size: 0.9 }],
+        radius: 6,
+      }),
+    );
+    s.add('autoStand', 256, 96, (c, w, h) => board(c, w, h, { bg: '#f2c313', fg: '#111', lines: [{ text: CITY_POIS.cityMl || 'LOCAL', size: 1.0 }, { text: 'TAXI / STAND', size: 0.7 }], radius: 6 }));
+    s.add('welcome', 512, 140, (c, w, h) =>
+      board(c, w, h, {
+        bg: '#0b5f8a',
+        fg: '#fff',
+        border: '#fff',
+        lines:
+          welcomeParts.length > 1
+            ? [{ text: welcomeParts[0], size: 1.05 }, { text: welcomeParts[1], size: 0.8 }]
+            : [{ text: welcomeParts[0], size: 0.95 }],
+      }),
+    );
     s.add('speed', 128, 128, (c, w, h) => {
       c.fillStyle = '#fff';
       c.beginPath();

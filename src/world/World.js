@@ -67,6 +67,7 @@ export class World {
       this.scene.add(this.specials.build());
     }];
     yield ['Building city neighborhoods', () => {
+      this.city._buildOsmBuildings();
       this.city._frontages();
       this.city._interior();
       this.city.props.build();

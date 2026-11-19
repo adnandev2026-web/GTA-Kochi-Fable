@@ -3,6 +3,8 @@
 
 import { Vehicle } from './Vehicle.js';
 import { VEHICLES, baseType } from './vehicles/specs.js';
+import { CITY_POIS } from '../world/layout.js';
+import { getCityConfig } from '../config/cityConfigs.ts';
 import { RNG } from '../utils/rng.js';
 
 export class VehicleManager {
@@ -29,12 +31,23 @@ export class VehicleManager {
    */
   setParking(spots, share = 0.45) {
     const rng = this.rng;
+    const cfg = getCityConfig(CITY_POIS.cityId || 'kochi');
+    const carMix = (cfg.carParkingMix && cfg.carParkingMix.length
+      ? cfg.carParkingMix
+      : [['hatchback', 5], ['sedan', 3], ['suv', 3]]
+    ).filter(([id]) => !!VEHICLES[baseType(id)]);
+    const bikeMix = (cfg.bikeParkingMix && cfg.bikeParkingMix.length
+      ? cfg.bikeParkingMix
+      : [['motorcycle', 5], ['scooter', 5]]
+    ).filter(([id]) => !!VEHICLES[baseType(id)]);
+
     this.slots = [];
     for (const s of spots) {
       if (!s.fixed && !rng.chance(share)) continue;
       let type = s.kind;
-      if (s.kind === 'car') type = rng.weighted([['hatchback', 5], ['sedan', 3], ['suv', 3]]);
-      else if (s.kind === 'bike') type = rng.weighted([['motorcycle', 5], ['scooter', 5]]);
+      if (s.kind === 'car') type = rng.weighted(carMix);
+      else if (s.kind === 'bike') type = rng.weighted(bikeMix);
+      else if (!VEHICLES[baseType(type)]) type = rng.weighted(carMix);
       this.slots.push({ x: s.x, z: s.z, heading: s.heading, type, colour: this.randomPaint(type), vehicle: null, gone: false });
     }
     this._scan = 0;

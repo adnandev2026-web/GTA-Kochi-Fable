@@ -63,11 +63,16 @@ export class Player {
     this.vel.z = damp(this.vel.z, dz * target, rate, dt);
     this.speed = Math.hypot(this.vel.x, this.vel.z);
 
-    if (moving) {
+    const aiming = !!(this.game.weaponSystem?.aiming || (input.fire && this.game.weaponSystem?.currentId !== 'unarmed'));
+    if (aiming) {
+      const aimHeading = Math.atan2(-Math.sin(cameraYaw), -Math.cos(cameraYaw));
+      this.heading = dampAngle(this.heading, aimHeading, 22, dt);
+    } else if (moving) {
       const want = Math.atan2(dx, dz);
       const turn = Math.abs(angleDiff(this.heading, want));
       this.heading = dampAngle(this.heading, want, turn > 2 ? 18 : 12, dt);
     }
+    this.character.setAim(aiming, this.game.cameraController?.pitch || 0);
 
     // Jump (a little coyote time makes kerb edges forgiving).
     this.coyote = this.grounded ? 0.12 : Math.max(0, this.coyote - dt);

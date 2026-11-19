@@ -33,6 +33,14 @@ export const SURF = {
   helmet: { color: [0.06, 0.06, 0.07], surf: [0, 0.2, 0.3, 0] },
   plate: { color: [1, 1, 1], surf: [0, 0.45, 0, 0] },
   canvasYellow: { color: [0.9, 0.66, 0.05], surf: [0, 0.75, 0, 0] },
+  londonRed: { color: [0.72, 0.05, 0.06], surf: [0, 0.28, 0.25, 0] },
+  taxiYellow: { color: [0.95, 0.72, 0.04], surf: [0, 0.26, 0.3, 0] },
+  nycBlue: { color: [0.06, 0.26, 0.64], surf: [0, 0.3, 0.25, 0] },
+  dubaiCream: { color: [0.93, 0.89, 0.78], surf: [0, 0.26, 0.3, 0] },
+  rtaRed: { color: [0.76, 0.09, 0.12], surf: [0, 0.28, 0.2, 0] },
+  jpGreen: { color: [0.06, 0.42, 0.22], surf: [0, 0.28, 0.25, 0] },
+  oliveDrab: { color: [0.22, 0.26, 0.16], surf: [0, 0.62, 0.08, 0] },
+  taxiSign: { color: [0.98, 0.85, 0.32], surf: [0, 0.2, 0.0, LIGHT.HEAD] },
 };
 
 export const WHITE_UV = [0.985, 0.015];

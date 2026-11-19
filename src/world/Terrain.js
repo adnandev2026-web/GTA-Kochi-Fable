@@ -4,7 +4,6 @@
 import { WATER, WORLD } from './layout.js';
 import { clamp, signedDistPolygon, distToPolyline } from '../utils/math.js';
 
-const CELL = 4;
 const MARGIN = 160;
 
 export class Terrain {
@@ -13,8 +12,10 @@ export class Terrain {
     this.minZ = WORLD.minZ - MARGIN;
     this.maxX = WORLD.maxX + MARGIN;
     this.maxZ = WORLD.maxZ + MARGIN;
-    this.nx = Math.ceil((this.maxX - this.minX) / CELL) + 1;
-    this.nz = Math.ceil((this.maxZ - this.minZ) / CELL) + 1;
+    const span = Math.max(this.maxX - this.minX, this.maxZ - this.minZ);
+    this.cell = Math.max(4, Math.ceil(span / 900));
+    this.nx = Math.ceil((this.maxX - this.minX) / this.cell) + 1;
+    this.nz = Math.ceil((this.maxZ - this.minZ) / this.cell) + 1;
     this.sdf = new Float32Array(this.nx * this.nz);
     this.waterLevel = WATER.level;
     this._build();
@@ -49,9 +50,9 @@ export class Terrain {
     });
     const FAR = 40;
     for (let j = 0; j < this.nz; j++) {
-      const z = this.minZ + j * CELL;
+      const z = this.minZ + j * this.cell;
       for (let i = 0; i < this.nx; i++) {
-        const x = this.minX + i * CELL;
+        const x = this.minX + i * this.cell;
         let d = FAR;
         for (const p of polys) {
           if (x < p.minX - FAR || x > p.maxX + FAR || z < p.minZ - FAR || z > p.maxZ + FAR) continue;
@@ -69,8 +70,8 @@ export class Terrain {
 
   /** Signed distance to the nearest shoreline in metres, negative over water. */
   waterDistance(x, z) {
-    const fx = clamp((x - this.minX) / CELL, 0, this.nx - 1.001);
-    const fz = clamp((z - this.minZ) / CELL, 0, this.nz - 1.001);
+    const fx = clamp((x - this.minX) / this.cell, 0, this.nx - 1.001);
+    const fz = clamp((z - this.minZ) / this.cell, 0, this.nz - 1.001);
     const i = Math.floor(fx);
     const j = Math.floor(fz);
     const u = fx - i;

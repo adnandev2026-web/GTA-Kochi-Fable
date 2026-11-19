@@ -18,6 +18,18 @@ import {
   Settings,
   Cookie,
   Home,
+  Globe,
+  Copy,
+  Lock,
+  Unlock,
+  RefreshCw,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
+  Crosshair,
+  Shirt,
+  ZoomIn,
 } from 'lucide-react';
 import bannerImg from './assets/images/gta_world_banner_1795006243771.jpg';
 import logoImg from './assets/images/gta_world_logo_1795006244444.jpg';
@@ -31,6 +43,7 @@ import {
   type CharacterAppearance,
   type DeviceMode,
 } from './shared/catalog';
+import { getCityConfig, parseCustomHomeId } from './config/cityConfigs';
 import {
   loadFirestoreProfile,
   saveFirestoreProfile,
@@ -41,20 +54,27 @@ import {
 } from './lib/firebase';
 import {
   buyVehicleApi,
+  createRoomApi,
   getCityPlayersCount,
   getHealth,
+  listRoomsApi,
   logoutSession,
+  lookupRoomApi,
   recordEconomyEventApi,
   saveCookieConsent,
   saveDeviceCookie,
   syncAuthSession,
   updateProfileApi,
   type PlayerProfile,
+  type RoomSummary,
 } from './lib/api';
 import { getCookie, setCookie } from './lib/cookies';
 import { CharacterPreview3D } from './components/CharacterPreview3D';
 import { MobileControls } from './components/MobileControls';
 import { SetupGuideModal } from './components/SetupGuideModal';
+import { CityHomeMapPicker } from './components/CityHomeMapPicker';
+import { WeaponWheel, type WeaponId } from './components/WeaponWheel';
+import { OrientationGuard } from './components/OrientationGuard';
 import { Game } from './Game.js';
 
 type Step = 'landing' | 'home' | 'city' | 'vehicles' | 'playing';
@@ -74,7 +94,35 @@ interface ChatMsg {
   isSelf?: boolean;
 }
 
+interface PeerInfo {
+  id: string;
+  name: string;
+  x?: number;
+  z?: number;
+  speaking?: boolean;
+}
+
+interface VoiceStatusState {
+  muted: boolean;
+  speaking: boolean;
+  proximityEnabled: boolean;
+  micState: 'muted' | 'active' | 'denied' | 'unsupported';
+  connectedPeers: number;
+}
+
+function defaultPublicRoomCode(cityId: string): string {
+  return `PUB-${cityId.slice(0, 4).toUpperCase()}`;
+}
+
 export function App() {
+  const initialQuery = useMemo(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const qRoom = (sp.get('room') || '').trim().toUpperCase();
+    const qCity = (sp.get('city') || '').trim().toLowerCase();
+    const validCity = CITIES_CATALOG.find((c) => c.id === qCity)?.id || '';
+    return { qRoom, qCity: validCity };
+  }, []);
+
   const [step, setStep] = useState<Step>('landing');
   const [studioTab, setStudioTab] = useState<StudioTab>('identity');
   const [cityFilter, setCityFilter] = useState<'All' | 'Kerala' | 'International'>('All');
@@ -90,23 +138,44 @@ export function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  const [profile, setProfile] = useState<PlayerProfile>({
+  const initCity = useMemo(
+    () => CITIES_CATALOG.find((c) => c.id === initialQuery.qCity) || CITIES_CATALOG[0],
+    [initialQuery.qCity],
+  );
+
+  const [profile, setProfile] = useState<PlayerProfile>(() => ({
     uid: '',
     email: '',
     name: 'Street Explorer',
     photoURL: '',
     money: STARTING_MONEY,
     deviceMode: initialDevice,
-    selectedCity: 'kochi',
-    selectedHome: 'kochi_kundannoor',
+    selectedCity: initCity.id,
+    selectedHome: initCity.homes[0].id,
     selectedVehicle: 'hatchback',
     ownedVehicles: [...STARTER_VEHICLES],
-    appearance: { ...DEFAULT_APPEARANCE },
+    appearance: {
+      ...DEFAULT_APPEARANCE,
+      ...getCityConfig(initCity.id).traditionalOutfit,
+    },
     stats: { playSeconds: 0, finesPaid: 0, tollsPaid: 0, fuelPaid: 0, earnedFromPlay: 0 },
     updatedAt: new Date().toISOString(),
-  });
+  }));
 
+  const [autoTraditionalOutfit, setAutoTraditionalOutfit] = useState<boolean>(true);
   const [multiplayerEnabled, setMultiplayerEnabled] = useState(true);
+  const [roomCode, setRoomCode] = useState<string>(
+    () => initialQuery.qRoom || defaultPublicRoomCode(initCity.id),
+  );
+  const [roomName, setRoomName] = useState<string>('');
+  const [roomIsPrivate, setRoomIsPrivate] = useState<boolean>(false);
+  const [roomsList, setRoomsList] = useState<RoomSummary[]>([]);
+  const [newRoomName, setNewRoomName] = useState<string>('');
+  const [newRoomPrivate, setNewRoomPrivate] = useState<boolean>(false);
+  const [joinCodeInput, setJoinCodeInput] = useState<string>(initialQuery.qRoom || '');
+  const [roomMsg, setRoomMsg] = useState<string | null>(null);
+  const [inviteCopied, setInviteCopied] = useState<boolean>(false);
+
   const [cityCounts, setCityCounts] = useState<Record<string, number>>({});
   const [dbStatus, setDbStatus] = useState('checking...');
   const [setupOpen, setSetupOpen] = useState(false);
@@ -115,11 +184,21 @@ export function App() {
   // In-game live state
   const gameRef = useRef<any>(null);
   const [gameReady, setGameReady] = useState(false);
-  const [peers, setPeers] = useState<Array<{ id: string; name: string }>>([]);
+  const [peers, setPeers] = useState<PeerInfo[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMsgs, setChatMsgs] = useState<ChatMsg[]>([]);
   const [chatDraft, setChatDraft] = useState('');
   const [econFlash, setEconFlash] = useState<EconomyToast | null>(null);
+  const [weaponWheelOpen, setWeaponWheelOpen] = useState(false);
+  const [currentWeapon, setCurrentWeapon] = useState<WeaponId>('unarmed');
+  const [sniperZoom, setSniperZoom] = useState<number>(4);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatusState>({
+    muted: true,
+    speaking: false,
+    proximityEnabled: true,
+    micState: 'muted',
+    connectedPeers: 0,
+  });
 
   const profileRef = useRef(profile);
   profileRef.current = profile;
@@ -130,6 +209,33 @@ export function App() {
       .then((h) => setDbStatus(h.db))
       .catch(() => setDbStatus('memory-fallback'));
   }, []);
+
+  // Resolve invite room link from URL query params
+  useEffect(() => {
+    if (!initialQuery.qRoom) return;
+    lookupRoomApi(initialQuery.qRoom)
+      .then(({ room }) => {
+        setRoomCode(room.code);
+        setRoomName(room.name);
+        setRoomIsPrivate(room.isPrivate);
+        const cObj = CITIES_CATALOG.find((c) => c.id === room.cityId);
+        if (cObj) {
+          setProfile((prev) => ({
+            ...prev,
+            selectedCity: cObj.id,
+            selectedHome: cObj.homes[0].id,
+            appearance: {
+              ...prev.appearance,
+              ...getCityConfig(cObj.id).traditionalOutfit,
+            },
+          }));
+        }
+        setRoomMsg(`Invite ready: ${room.name} (${room.code}) in ${room.cityId.toUpperCase()}`);
+      })
+      .catch(() => {
+        setRoomMsg(`Room code ${initialQuery.qRoom} queued — will create or join when launching.`);
+      });
+  }, [initialQuery.qRoom]);
 
   useEffect(() => {
     const unsub = subscribeAuth(async (user) => {
@@ -148,12 +254,19 @@ export function App() {
           loadFirestoreProfile(user, deviceMode),
         ]);
 
+        const chosenCity = initialQuery.qCity || cloudProf?.cityId || serverProf.selectedCity || initCity.id;
+        const cityMeta = CITIES_CATALOG.find((c) => c.id === chosenCity) || CITIES_CATALOG[0];
+        const rawHome = initialQuery.qCity ? cityMeta.homes[0].id : (cloudProf?.homeId || serverProf.selectedHome);
+        const homeIsValid =
+          Boolean(parseCustomHomeId(rawHome, chosenCity)) ||
+          cityMeta.homes.some((h) => h.id === rawHome);
+
         const merged: PlayerProfile = {
           ...serverProf,
           name: cloudProf?.characterName || serverProf.name || user.displayName || 'Street Explorer',
           money: typeof cloudProf?.money === 'number' ? Math.max(serverProf.money, cloudProf.money) : serverProf.money,
-          selectedCity: cloudProf?.cityId || serverProf.selectedCity,
-          selectedHome: cloudProf?.homeId || serverProf.selectedHome,
+          selectedCity: cityMeta.id,
+          selectedHome: homeIsValid ? rawHome : cityMeta.homes[0].id,
           selectedVehicle: cloudProf?.selectedVehicle || serverProf.selectedVehicle,
           ownedVehicles: Array.from(
             new Set([
@@ -169,11 +282,23 @@ export function App() {
           },
         };
         setProfile(merged);
+        if (!initialQuery.qRoom) {
+          setRoomCode((prev) => (prev.startsWith('PUB-') ? defaultPublicRoomCode(cityMeta.id) : prev));
+        }
       } catch (err) {
         console.warn('[auth] Profile sync warning:', err);
       }
     });
     return () => unsub();
+  }, [initialQuery.qCity, initialQuery.qRoom, initCity.id]);
+
+  const refreshRooms = useCallback(async (cityId: string) => {
+    try {
+      const res = await listRoomsApi(cityId);
+      setRoomsList(res.rooms || []);
+    } catch {
+      setRoomsList([]);
+    }
   }, []);
 
   useEffect(() => {
@@ -187,7 +312,8 @@ export function App() {
     ).then((entries) => {
       setCityCounts(Object.fromEntries(entries));
     });
-  }, [step]);
+    refreshRooms(profile.selectedCity);
+  }, [step, profile.selectedCity, refreshRooms]);
 
   const handleSelectDevice = async (mode: DeviceMode) => {
     setDeviceMode(mode);
@@ -260,16 +386,92 @@ export function App() {
     }));
   };
 
+  const applyTraditionalOutfit = useCallback((cityId: string) => {
+    const cfg = getCityConfig(cityId);
+    setProfile((prev) => ({
+      ...prev,
+      appearance: {
+        ...prev.appearance,
+        ...cfg.traditionalOutfit,
+      },
+    }));
+  }, []);
+
   const handleCitySelect = (cityId: string) => {
     const city = CITIES_CATALOG.find((c) => c.id === cityId) || CITIES_CATALOG[0];
-    const validHome = city.homes.some((h) => h.id === profile.selectedHome)
-      ? profile.selectedHome
-      : city.homes[0].id;
+    const cityCfg = getCityConfig(city.id);
+    const validHome =
+      Boolean(parseCustomHomeId(profile.selectedHome, city.id)) ||
+      city.homes.some((h) => h.id === profile.selectedHome)
+        ? profile.selectedHome
+        : city.homes[0].id;
+
     setProfile((prev) => ({
       ...prev,
       selectedCity: city.id,
       selectedHome: validHome,
+      appearance: autoTraditionalOutfit
+        ? { ...prev.appearance, ...cityCfg.traditionalOutfit }
+        : prev.appearance,
     }));
+
+    if (roomCode.startsWith('PUB-') || !roomCode) {
+      setRoomCode(defaultPublicRoomCode(city.id));
+      setRoomName(`${city.name} Public Server`);
+      setRoomIsPrivate(false);
+    }
+  };
+
+  const handleCreateRoom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRoomMsg(null);
+    try {
+      const { room } = await createRoomApi({
+        cityId: profile.selectedCity,
+        name: newRoomName.trim() || `${activeCity.name} Squad`,
+        isPrivate: newRoomPrivate,
+        hostName: profile.name || 'Player',
+      });
+      setRoomCode(room.code);
+      setRoomName(room.name);
+      setRoomIsPrivate(room.isPrivate);
+      setNewRoomName('');
+      setRoomMsg(`Created ${room.isPrivate ? 'Private' : 'Public'} Room: ${room.code}`);
+      refreshRooms(profile.selectedCity);
+    } catch (err: any) {
+      setRoomMsg(err?.message || 'Could not create room');
+    }
+  };
+
+  const handleJoinRoomByCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = joinCodeInput.trim().toUpperCase();
+    if (!cleaned) return;
+    setRoomMsg(null);
+    try {
+      const { room } = await lookupRoomApi(cleaned);
+      setRoomCode(room.code);
+      setRoomName(room.name);
+      setRoomIsPrivate(room.isPrivate);
+      if (room.cityId && room.cityId !== profile.selectedCity) {
+        handleCitySelect(room.cityId);
+      }
+      setRoomMsg(`Joined ${room.name} (${room.code}) in ${room.cityId.toUpperCase()}`);
+    } catch {
+      setRoomMsg(`No active room found for code "${cleaned}"`);
+    }
+  };
+
+  const copyInviteLink = async (codeOverride?: string) => {
+    const code = (codeOverride || roomCode || defaultPublicRoomCode(profile.selectedCity)).toUpperCase();
+    const url = `${window.location.origin}/?room=${encodeURIComponent(code)}&city=${encodeURIComponent(profile.selectedCity)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setInviteCopied(true);
+      setTimeout(() => setInviteCopied(false), 2600);
+    } catch {
+      setRoomMsg(`Share URL: ${url}`);
+    }
   };
 
   const handleBuyOrSelectVehicle = async (vehicleId: string) => {
@@ -302,7 +504,7 @@ export function App() {
   const handleMoneyEvent = useCallback(
     async (kind: 'play_bonus' | 'fine' | 'toll' | 'fuel', amount: number, reason: string) => {
       const uid = profileRef.current.uid;
-      let delta = kind === 'play_bonus' ? amount : -amount;
+      const delta = kind === 'play_bonus' ? amount : -amount;
       let nextMoney = Math.max(0, profileRef.current.money + delta);
 
       setProfile((prev) => ({
@@ -350,8 +552,19 @@ export function App() {
     setGameReady(false);
     setPeers([]);
     setChatMsgs([]);
+    setWeaponWheelOpen(false);
+    setCurrentWeapon('unarmed');
+    setSniperZoom(4);
+    setVoiceStatus({
+      muted: true,
+      speaking: false,
+      proximityEnabled: true,
+      micState: 'muted',
+      connectedPeers: 0,
+    });
     setStep('playing');
 
+    const activeCode = roomCode || defaultPublicRoomCode(profile.selectedCity);
     const g = new Game(canvas, {
       cityId: profile.selectedCity,
       homeId: profile.selectedHome,
@@ -361,10 +574,22 @@ export function App() {
       playerName: profile.name,
       deviceMode,
       multiplayerEnabled,
+      roomCode: activeCode,
+      roomName,
+      roomIsPrivate,
       uid: profile.uid || 'guest',
       onMoneyEvent: handleMoneyEvent,
-      onPeersChange: (list: Array<{ id: string; name: string }>) => setPeers(list),
+      onPeersChange: (list: PeerInfo[]) => setPeers(list),
       onChatMessage: (msg: ChatMsg) => setChatMsgs((prev) => [...prev.slice(-24), msg]),
+      onWeaponChange: (wId: WeaponId) => setCurrentWeapon(wId),
+      onToggleWeaponWheel: () => {
+        setWeaponWheelOpen((prev) => {
+          const next = !prev;
+          if (next) gameRef.current?.input?.exitLock();
+          return next;
+        });
+      },
+      onVoiceStatus: (st: VoiceStatusState) => setVoiceStatus(st),
       onReady: () => setGameReady(true),
     });
     gameRef.current = g;
@@ -378,6 +603,7 @@ export function App() {
       gameRef.current.dispose();
       gameRef.current = null;
     }
+    setWeaponWheelOpen(false);
     setGameReady(false);
     setStep(targetStep);
   };
@@ -388,18 +614,62 @@ export function App() {
     return () => clearTimeout(t);
   }, [econFlash]);
 
+  // Sync keyboard Sniper Zoom V and Weapon Wheel Escape when playing
+  useEffect(() => {
+    if (step !== 'playing') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'KeyV') {
+        const z = gameRef.current?.weaponSystem?.sniperZoom;
+        if (typeof z === 'number') setSniperZoom(z);
+      } else if (e.code === 'Escape' && weaponWheelOpen) {
+        setWeaponWheelOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [step, weaponWheelOpen]);
+
   const activeCity = useMemo(
     () => CITIES_CATALOG.find((c) => c.id === profile.selectedCity) || CITIES_CATALOG[0],
     [profile.selectedCity],
   );
-  const activeHome = useMemo(
-    () => activeCity.homes.find((h) => h.id === profile.selectedHome) || activeCity.homes[0],
-    [activeCity, profile.selectedHome],
-  );
+  const activeCityCfg = useMemo(() => getCityConfig(activeCity.id), [activeCity.id]);
+  const activeHome = useMemo(() => {
+    const custom = parseCustomHomeId(profile.selectedHome, activeCity.id);
+    if (custom) {
+      return {
+        id: profile.selectedHome,
+        name: `Custom Pin (${custom.lat.toFixed(4)}, ${custom.lon.toFixed(4)})`,
+        district: `${activeCity.name} OSM Pin`,
+        x: custom.x,
+        z: custom.z,
+        heading: 0,
+        style: 'Custom OSM Safehouse',
+      };
+    }
+    return activeCity.homes.find((h) => h.id === profile.selectedHome) || activeCity.homes[0];
+  }, [activeCity, profile.selectedHome]);
+
   const filteredCities = useMemo(
     () => CITIES_CATALOG.filter((c) => cityFilter === 'All' || c.category === cityFilter),
     [cityFilter],
   );
+
+  const toggleVoiceMute = async () => {
+    if (!gameRef.current) return;
+    await gameRef.current.setVoiceMuted(!voiceStatus.muted);
+  };
+
+  const toggleVoiceProximity = () => {
+    if (!gameRef.current) return;
+    gameRef.current.setVoiceProximity(!voiceStatus.proximityEnabled);
+  };
+
+  const cycleSniperZoomUi = () => {
+    gameRef.current?.cycleSniperZoom();
+    const z = gameRef.current?.weaponSystem?.sniperZoom;
+    if (typeof z === 'number') setSniperZoom(z);
+  };
 
   // Mobile body class for responsive HUD scaling
   useEffect(() => {
@@ -416,7 +686,7 @@ export function App() {
               <img src={logoImg} alt="GTA World Logo" className="brand-logo" />
               <div>
                 <div className="brand-title">GTA WORLD</div>
-                <div className="brand-sub">OPEN-WORLD MULTIPLAYER</div>
+                <div className="brand-sub">GLOBAL OSM MULTIPLAYER</div>
               </div>
             </div>
 
@@ -446,14 +716,22 @@ export function App() {
               <div className="hero-banner-card">
                 <img src={bannerImg} alt="GTA World Banner" className="hero-banner-img" />
                 <div className="hero-banner-overlay">
-                  <div className="hero-badge">KERALA & GLOBAL OPEN WORLD</div>
-                  <h1>Explore Iconic Streets, Drive Anywhere, Build Your Empire</h1>
+                  <div className="hero-badge">REAL OPENSTREETMAP · KERALA & GLOBAL</div>
+                  <h1>Explore Real-World Cities, Drive Local Fleets, Play Live Together</h1>
                   <p>
-                    Customize every detail of your character, pick your neighborhood home across Kochi,
-                    Pookkottumpadam, Trivandrum, Kozhikkode, New York, Dubai, London, or Tokyo, and play live with friends.
+                    Stream live OpenStreetMap roads and 3D buildings across Pookkottumpadam (Nilambur–Kalikavu),
+                    Kozhikkode, Trivandrum, Kochi, Tokyo, London, New York, and Dubai — with bilingual signage,
+                    regional outfits, tactical combat, and live voice chat.
                   </p>
                 </div>
               </div>
+
+              {initialQuery.qRoom && (
+                <div className="info-banner">
+                  You opened a Multiplayer Room Invite: <strong>{initialQuery.qRoom}</strong>
+                  {initialQuery.qCity ? ` (${initialQuery.qCity.toUpperCase()})` : ''}. Sign in to join the squad!
+                </div>
+              )}
 
               <section className="panel-card">
                 <div className="section-head">
@@ -464,21 +742,21 @@ export function App() {
                   {[
                     {
                       id: 'mobile' as DeviceMode,
-                      title: 'Mobile',
+                      title: 'Mobile / Tablet',
                       icon: Smartphone,
-                      desc: 'On-screen touch joystick, touch look & action pads',
+                      desc: 'Landscape-locked dual joysticks, 360° touch aim, scope zoom & vehicle pads',
                     },
                     {
                       id: 'laptop' as DeviceMode,
                       title: 'Laptop',
                       icon: Laptop,
-                      desc: 'WASD + boosted trackpad camera sensitivity',
+                      desc: 'WASD + boosted trackpad camera sensitivity + weapon wheel',
                     },
                     {
                       id: 'desktop' as DeviceMode,
                       title: 'Desktop',
                       icon: Monitor,
-                      desc: 'Full Pointer-Lock mouse + keyboard precision',
+                      desc: 'Full Pointer-Lock mouse 360° aim, sniper scope & keyboard precision',
                     },
                   ].map((d) => {
                     const Icon = d.icon;
@@ -561,7 +839,7 @@ export function App() {
                     className={studioTab === 'identity' ? 'active' : ''}
                     onClick={() => setStudioTab('identity')}
                   >
-                    <User size={15} /> Identity & Home
+                    <User size={15} /> Identity & City
                   </button>
                   <button
                     type="button"
@@ -575,7 +853,7 @@ export function App() {
                     className={studioTab === 'outfit' ? 'active' : ''}
                     onClick={() => setStudioTab('outfit')}
                   >
-                    Shirt, Overcoat & Pants
+                    Regional & Street Outfit
                   </button>
                 </div>
 
@@ -594,7 +872,7 @@ export function App() {
                       </label>
 
                       <div className="field-block">
-                        <span>Starter City & Home Plot</span>
+                        <span>Starter City & Traditional Dress</span>
                         <div className="mini-city-row">
                           {CITIES_CATALOG.map((c) => (
                             <button
@@ -606,6 +884,21 @@ export function App() {
                               {c.name}
                             </button>
                           ))}
+                        </div>
+                        <div className="field-row-between">
+                          <div>
+                            <strong>{activeCityCfg.traditionalOutfit.label}</strong>
+                            <div className="muted-tag">
+                              Traditional outfit for {activeCity.name} ({activeCity.languageLabel})
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="chip-btn active"
+                            onClick={() => applyTraditionalOutfit(activeCity.id)}
+                          >
+                            <Shirt size={14} /> Wear Traditional
+                          </button>
                         </div>
                         <div className="home-plot-list">
                           {activeCity.homes.map((h) => (
@@ -627,8 +920,8 @@ export function App() {
 
                       <div className="field-row-between">
                         <div>
-                          <strong>Multiplayer Mode</strong>
-                          <div className="muted-tag">See live players, vehicles & city chat</div>
+                          <strong>Multiplayer & Live Voice</strong>
+                          <div className="muted-tag">Join public/private rooms with friends & proximity voice</div>
                         </div>
                         <button
                           type="button"
@@ -676,7 +969,7 @@ export function App() {
                       </div>
 
                       <div className="field-block">
-                        <span>Hat</span>
+                        <span>Hat & Headwear (Ghutra / Kasa / Cap)</span>
                         <div className="chip-wrap">
                           {APPEARANCE_OPTIONS.hats.map((h) => (
                             <button
@@ -749,8 +1042,22 @@ export function App() {
 
                   {studioTab === 'outfit' && (
                     <div className="form-stack">
+                      <div className="field-row-between">
+                        <div>
+                          <strong>Region Traditional Preset</strong>
+                          <div className="muted-tag">{activeCityCfg.traditionalOutfit.label}</div>
+                        </div>
+                        <button
+                          type="button"
+                          className="chip-btn active"
+                          onClick={() => applyTraditionalOutfit(activeCity.id)}
+                        >
+                          <Shirt size={14} /> Apply {activeCity.name} Outfit
+                        </button>
+                      </div>
+
                       <div className="field-block">
-                        <span>Shirt Style & Color</span>
+                        <span>Top / Kurta / Kimono / Kandura</span>
                         <div className="chip-wrap">
                           {APPEARANCE_OPTIONS.shirtStyles.map((s) => (
                             <button
@@ -804,7 +1111,7 @@ export function App() {
                       </div>
 
                       <div className="field-block">
-                        <span>Pants Style & Color</span>
+                        <span>Lower / Mundu / Hakama / Kandura</span>
                         <div className="chip-wrap">
                           {APPEARANCE_OPTIONS.pantsStyles.map((p) => (
                             <button
@@ -865,22 +1172,29 @@ export function App() {
                       setStep('city');
                     }}
                   >
-                    <Play size={16} /> PLAY — CHOOSE CITY MAP
+                    <Play size={16} /> NEXT — OSM CITY, HOME & ROOMS
                   </button>
                 </div>
               </div>
             </main>
           )}
 
-          {/* SCREEN 3: CITY / MAP SELECTION */}
+          {/* SCREEN 3: CITY / OSM MAP HOME PICKER / MULTIPLAYER ROOMS */}
           {step === 'city' && (
             <main className="page-container">
               <div className="page-header">
                 <div>
-                  <div className="muted-tag">STEP 3 · OPEN WORLD MAPS</div>
-                  <h1>Choose Your City & Starting Home</h1>
+                  <div className="muted-tag">STEP 3 · OPENSTREETMAP WORLD & MULTIPLAYER ROOMS</div>
+                  <h1>Choose Real-World City, Pin Home & Join Room</h1>
                 </div>
                 <div className="chip-wrap">
+                  <button
+                    type="button"
+                    className={`chip-btn ${autoTraditionalOutfit ? 'active' : ''}`}
+                    onClick={() => setAutoTraditionalOutfit((v) => !v)}
+                  >
+                    <Shirt size={13} /> Auto Traditional Dress: {autoTraditionalOutfit ? 'ON' : 'OFF'}
+                  </button>
                   {(['All', 'Kerala', 'International'] as const).map((tab) => (
                     <button
                       key={tab}
@@ -907,7 +1221,9 @@ export function App() {
                     >
                       <div className="city-card-head">
                         <div>
-                          <span className="city-cat">{city.category}</span>
+                          <span className="city-cat">
+                            {city.category} · {city.trafficSide === 'left' ? 'LHT' : 'RHT'} · {city.languageLabel}
+                          </span>
                           <h3>{city.name}</h3>
                           <div className="muted-tag">{city.regionLabel}</div>
                         </div>
@@ -923,25 +1239,150 @@ export function App() {
                       </ul>
                       {selected && (
                         <div className="city-home-picker" onClick={(e) => e.stopPropagation()}>
-                          <div className="muted-tag">Pick Start Home:</div>
-                          <div className="chip-wrap">
-                            {city.homes.map((h) => (
-                              <button
-                                key={h.id}
-                                type="button"
-                                className={`chip-btn ${profile.selectedHome === h.id ? 'active' : ''}`}
-                                onClick={() => setProfile((p) => ({ ...p, selectedHome: h.id }))}
-                              >
-                                <MapPin size={12} /> {h.district}
-                              </button>
-                            ))}
+                          <div className="muted-tag">
+                            Traditional Attire: <strong>{city.traditionalLabel}</strong>
                           </div>
+                          <button
+                            type="button"
+                            className="chip-btn active"
+                            onClick={() => applyTraditionalOutfit(city.id)}
+                          >
+                            <Shirt size={12} /> Dress in {city.traditionalLabel}
+                          </button>
                         </div>
                       )}
                     </div>
                   );
                 })}
               </div>
+
+              {/* Interactive 2D Real-World OSM Home Spawn Picker */}
+              <CityHomeMapPicker
+                cityId={profile.selectedCity}
+                selectedHomeId={profile.selectedHome}
+                onSelectHome={(homeId) => setProfile((p) => ({ ...p, selectedHome: homeId }))}
+              />
+
+              {/* Multiplayer Rooms, Code Join & Invite Link */}
+              <section className="room-lobby-card">
+                <div className="section-head" style={{ marginBottom: 0 }}>
+                  <div>
+                    <div className="muted-tag">MULTIPLAYER LOBBY · WEBSOCKET + LIVE WEBRTC VOICE</div>
+                    <h2>Room Selection & Friend Invites ({activeCity.name})</h2>
+                  </div>
+                  <div className="chip-wrap">
+                    <span className="room-code-pill">
+                      <Globe size={13} /> Active Room: {roomCode || defaultPublicRoomCode(activeCity.id)}
+                    </span>
+                    <button
+                      type="button"
+                      className="chip-btn active"
+                      onClick={() => copyInviteLink()}
+                    >
+                      <Copy size={13} /> {inviteCopied ? 'Invite Link Copied!' : 'Copy Invite Link'}
+                    </button>
+                    <button
+                      type="button"
+                      className={`chip-btn ${multiplayerEnabled ? 'active' : ''}`}
+                      onClick={() => setMultiplayerEnabled((v) => !v)}
+                    >
+                      <Users size={13} /> {multiplayerEnabled ? 'Multiplayer ON' : 'Solo Mode'}
+                    </button>
+                  </div>
+                </div>
+
+                {roomMsg && <div className="info-banner" style={{ marginBottom: 0 }}>{roomMsg}</div>}
+
+                <div className="room-lobby-grid">
+                  <div className="room-box">
+                    <div className="section-head" style={{ marginBottom: 4 }}>
+                      <strong>Create Room or Join by Code</strong>
+                    </div>
+                    <form className="room-inline-form" onSubmit={handleCreateRoom}>
+                      <input
+                        type="text"
+                        maxLength={32}
+                        value={newRoomName}
+                        onChange={(e) => setNewRoomName(e.target.value)}
+                        placeholder={`New ${activeCity.name} room name`}
+                      />
+                      <button
+                        type="button"
+                        className={`chip-btn ${newRoomPrivate ? 'active' : ''}`}
+                        onClick={() => setNewRoomPrivate((v) => !v)}
+                      >
+                        {newRoomPrivate ? <Lock size={13} /> : <Unlock size={13} />}
+                        {newRoomPrivate ? 'Private' : 'Public'}
+                      </button>
+                      <button type="submit" className="primary-btn" style={{ padding: '8px 14px' }}>
+                        Create
+                      </button>
+                    </form>
+
+                    <form className="room-inline-form" onSubmit={handleJoinRoomByCode}>
+                      <input
+                        type="text"
+                        maxLength={12}
+                        value={joinCodeInput}
+                        onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                        placeholder="Enter 6-char Room Code (e.g. K7M9PX)"
+                      />
+                      <button type="submit" className="ghost-btn">
+                        Join Code
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="room-box">
+                    <div className="section-head" style={{ marginBottom: 4 }}>
+                      <strong>Public Rooms in {activeCity.name}</strong>
+                      <button type="button" className="icon-btn" title="Refresh rooms" onClick={() => refreshRooms(activeCity.id)}>
+                        <RefreshCw size={14} />
+                      </button>
+                    </div>
+                    <div className="room-list">
+                      <div className="room-row">
+                        <div>
+                          <strong>{activeCity.name} Main City Server</strong>
+                          <div className="muted-tag">Code: {defaultPublicRoomCode(activeCity.id)} · Public</div>
+                        </div>
+                        <button
+                          type="button"
+                          className={`chip-btn ${roomCode === defaultPublicRoomCode(activeCity.id) ? 'active' : ''}`}
+                          onClick={() => {
+                            setRoomCode(defaultPublicRoomCode(activeCity.id));
+                            setRoomName(`${activeCity.name} Public`);
+                            setRoomIsPrivate(false);
+                          }}
+                        >
+                          {roomCode === defaultPublicRoomCode(activeCity.id) ? 'Selected' : 'Select'}
+                        </button>
+                      </div>
+                      {roomsList.map((r) => (
+                        <div key={r.code} className="room-row">
+                          <div>
+                            <strong>{r.name}</strong>
+                            <div className="muted-tag">
+                              {r.code} · {r.playerCount} players · Host: {r.hostName}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className={`chip-btn ${roomCode === r.code ? 'active' : ''}`}
+                            onClick={() => {
+                              setRoomCode(r.code);
+                              setRoomName(r.name);
+                              setRoomIsPrivate(r.isPrivate);
+                            }}
+                          >
+                            {roomCode === r.code ? 'Selected' : 'Join'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
 
               <div className="page-footer">
                 <button type="button" className="ghost-btn" onClick={() => setStep('home')}>
@@ -954,6 +1395,7 @@ export function App() {
                     await persistProfile({
                       selectedCity: profile.selectedCity,
                       selectedHome: profile.selectedHome,
+                      appearance: profile.appearance,
                     });
                     setStep('vehicles');
                   }}
@@ -969,10 +1411,15 @@ export function App() {
             <main className="page-container">
               <div className="page-header">
                 <div>
-                  <div className="muted-tag">STEP 4 · GARAGE & DEALERSHIP ({activeCity.name.toUpperCase()})</div>
+                  <div className="muted-tag">
+                    STEP 4 · GARAGE ({activeCity.name.toUpperCase()} · HOME: {activeHome.name.toUpperCase()})
+                  </div>
                   <h1>Choose or Unlock Your Vehicles</h1>
                 </div>
-                <div className="wallet-badge-lg">Balance: ${profile.money.toLocaleString()}</div>
+                <div className="chip-wrap">
+                  <span className="room-code-pill">Room: {roomCode || defaultPublicRoomCode(activeCity.id)}</span>
+                  <div className="wallet-badge-lg">Balance: ${profile.money.toLocaleString()}</div>
+                </div>
               </div>
 
               {actionMsg && <div className="info-banner">{actionMsg}</div>}
@@ -985,7 +1432,7 @@ export function App() {
                   return (
                     <div key={v.id} className={`vehicle-card ${selected ? 'selected' : ''}`}>
                       <div className="vehicle-top">
-                        <span className="city-cat">{v.category}</span>
+                        <span className="city-cat">{v.category}{v.regionTag ? ` · ${v.regionTag}` : ''}</span>
                         <span className={`price-tag ${owned ? 'owned' : ''}`}>
                           {owned ? (v.starter ? 'STARTER OWNED' : 'OWNED') : `$${v.price.toLocaleString()}`}
                         </span>
@@ -1045,7 +1492,7 @@ export function App() {
         </div>
       )}
 
-      {/* IN-GAME OVERLAYS (WALLET, MULTIPLAYER CHAT, MOBILE CONTROLS, SWITCH CITY) */}
+      {/* IN-GAME OVERLAYS (WALLET, ROOM INVITE, LIVE VOICE, WEAPON WHEEL, CHAT, MOBILE CONTROLS) */}
       {step === 'playing' && gameReady && (
         <div className="ingame-overlay">
           <div className="ingame-topbar">
@@ -1055,19 +1502,84 @@ export function App() {
               <span className="city-label">· {activeCity.name}</span>
             </div>
 
-            {multiplayerEnabled && (
+            <button
+              type="button"
+              className="ingame-btn"
+              onClick={() => {
+                setWeaponWheelOpen((o) => !o);
+                gameRef.current?.input?.exitLock();
+              }}
+              title="Open Weapon Wheel (Q / Tab)"
+            >
+              <Crosshair size={14} />
+              <span>{currentWeapon.toUpperCase()}</span>
+            </button>
+
+            {currentWeapon === 'sniper' && (
               <button
                 type="button"
-                className="ingame-btn"
-                onClick={() => {
-                  setChatOpen((o) => !o);
-                  gameRef.current?.input?.exitLock();
-                }}
+                className="ingame-btn active"
+                onClick={cycleSniperZoomUi}
+                title="Cycle Sniper Scope Zoom (V)"
               >
-                <Users size={14} />
-                <span>{peers.length + 1} Online</span>
-                <MessageSquare size={14} />
+                <ZoomIn size={14} />
+                <span>{sniperZoom.toFixed(0)}x</span>
               </button>
+            )}
+
+            {multiplayerEnabled && (
+              <>
+                <button
+                  type="button"
+                  className="ingame-btn"
+                  onClick={() => copyInviteLink()}
+                  title="Copy 1-Click Room Invite Link"
+                >
+                  <Copy size={13} />
+                  <span>{inviteCopied ? 'Copied!' : roomCode}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`ingame-btn ${!voiceStatus.muted ? 'active' : ''}`}
+                  onClick={toggleVoiceMute}
+                  title="Toggle Live Voice Chat Mic"
+                >
+                  {voiceStatus.muted ? <MicOff size={14} /> : <Mic size={14} />}
+                  <span>
+                    {voiceStatus.micState === 'denied'
+                      ? 'Mic Blocked'
+                      : voiceStatus.muted
+                      ? 'Mic Muted'
+                      : voiceStatus.speaking
+                      ? 'Speaking...'
+                      : 'Voice Live'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`ingame-btn ${voiceStatus.proximityEnabled ? 'active' : ''}`}
+                  onClick={toggleVoiceProximity}
+                  title="Toggle Spatial Proximity Voice Attenuation"
+                >
+                  {voiceStatus.proximityEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+                  <span>{voiceStatus.proximityEnabled ? 'Prox' : 'Global'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="ingame-btn"
+                  onClick={() => {
+                    setChatOpen((o) => !o);
+                    gameRef.current?.input?.exitLock();
+                  }}
+                >
+                  <Users size={14} />
+                  <span>{peers.length + 1}</span>
+                  <MessageSquare size={14} />
+                </button>
+              </>
             )}
 
             <button
@@ -1096,9 +1608,19 @@ export function App() {
           {chatOpen && (
             <div className="mp-chat-drawer">
               <div className="mp-chat-head">
-                <strong>{activeCity.name} Multiplayer Chat ({peers.length + 1})</strong>
+                <strong>Room {roomCode} · {peers.length + 1} Players</strong>
                 <button type="button" className="icon-btn" onClick={() => setChatOpen(false)}>×</button>
               </div>
+              {peers.length > 0 && (
+                <div className="room-list" style={{ maxHeight: 88 }}>
+                  {peers.map((p) => (
+                    <div key={p.id} className={`voice-peer-row ${p.speaking ? 'speaking' : ''}`}>
+                      <span>{p.name}</span>
+                      <span>{p.speaking ? 'Speaking' : 'Connected'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="mp-chat-list">
                 {chatMsgs.length === 0 && (
                   <div className="muted-tag">Say hello to players in {activeCity.name}!</div>
@@ -1123,25 +1645,47 @@ export function App() {
                   maxLength={120}
                   value={chatDraft}
                   onChange={(e) => setChatDraft(e.target.value)}
-                  placeholder="Message city..."
+                  placeholder="Message room..."
                 />
                 <button type="submit" aria-label="Send"><Send size={14} /></button>
               </form>
             </div>
           )}
 
+          <WeaponWheel
+            isOpen={weaponWheelOpen}
+            currentWeapon={currentWeapon}
+            sniperZoom={sniperZoom}
+            onSelect={(wId) => {
+              gameRef.current?.selectWeapon(wId);
+              setCurrentWeapon(wId);
+            }}
+            onCycleZoom={cycleSniperZoomUi}
+            onClose={() => setWeaponWheelOpen(false)}
+          />
+
           {deviceMode === 'mobile' && (
             <MobileControls
               onAxes={(mx, my, sprint) => gameRef.current?.input?.setVirtualAxes(mx, my, sprint)}
+              onLookDelta={(dx, dy) => gameRef.current?.input?.addLookDelta(dx, dy)}
+              onCombatButtons={(st) => gameRef.current?.input?.setCombatButtons(st)}
               onKey={(code, down) => gameRef.current?.input?.triggerKey(code, down)}
               onInteract={() => gameRef.current?.interact()}
               onToggleMap={() => gameRef.current?.hud?.toggleMap()}
+              onOpenWeaponWheel={() => setWeaponWheelOpen((o) => !o)}
+              onCycleZoom={cycleSniperZoomUi}
+              onToggleMic={multiplayerEnabled ? toggleVoiceMute : undefined}
+              currentWeapon={currentWeapon}
+              sniperZoom={sniperZoom}
+              voiceMuted={voiceStatus.muted}
             />
           )}
 
+          <OrientationGuard enabled={deviceMode === 'mobile'} />
+
           <div className="economy-rules-hint">
             <ShieldAlert size={13} />
-            <span>+Playtime Bonus · -Police & School Speed Fines · -Toll Plazas · -Petrol</span>
+            <span>+Playtime Bonus · -Police & School Speed Fines · -Toll Plazas · -Petrol · 1-4/Q Weapons · V Zoom</span>
           </div>
         </div>
       )}

@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { makeCanvas, canvasTexture, fitText, font, roundRect, weather, shade } from '../utils/canvas.js';
 import { RNG } from '../utils/rng.js';
+import { getCityConfig } from '../config/cityConfigs.ts';
 
 export const BAY = 3.4; // metres per bay
 export const FLOOR = 3.1; // metres per floor
@@ -459,7 +460,51 @@ const SIGN_COLOURS = [
 export const SHOP_COLS = 4;
 export const SHOP_ROWS = 8;
 
-export function buildShopAtlas(assets) {
+const CATEGORY_TO_KIND = {
+  BAKERY: 'bakery',
+  HOTEL: 'hotel',
+  DINING: 'hotel',
+  RAMEN: 'hotel',
+  SUSHI: 'hotel',
+  GRILL: 'hotel',
+  BAR: 'hotel',
+  DINER: 'hotel',
+  DELI: 'hotel',
+  TEA: 'tea',
+  CAFE: 'tea',
+  JUICE: 'juice',
+  SWEETS: 'bakery',
+  MEDICAL: 'medical',
+  PHARMACY: 'medical',
+  CHEMIST: 'medical',
+  DRUGSTORE: 'medical',
+  CLINIC: 'medical',
+  MOBILE: 'mobile',
+  TECH: 'mobile',
+  ARCADE: 'mobile',
+  MUSIC: 'mobile',
+  TEXTILES: 'textile',
+  FASHION: 'textile',
+  TAILOR: 'textile',
+  LUXURY: 'jewel',
+  GOLD: 'jewel',
+  JEWELRY: 'jewel',
+  OUD: 'jewel',
+  BANK: 'bank',
+  AUTO: 'garage',
+  SPICE: 'veg',
+  MARKET: 'store',
+  GROCERY: 'store',
+  SUPERMARKET: 'store',
+  BODEGA: 'store',
+  KIOSK: 'store',
+  BOOKS: 'store',
+  HARDWARE: 'store',
+  '24H': 'store',
+  CLUB: 'hotel',
+};
+
+export function buildShopAtlas(assets, cityId = 'kochi') {
   const W = 2048;
   const H = 2048;
   const canvas = makeCanvas(W, H);
@@ -473,11 +518,30 @@ export function buildShopAtlas(assets) {
   const tw = W / SHOP_COLS;
   const th = H / SHOP_ROWS;
   const corrugated = assets.textures.corrugated.map.image;
-  SHOPS.forEach((shop, i) => {
+  const cfg = getCityConfig(cityId);
+  const isRtl = !!cfg.language?.rtl;
+  const totalSlots = SHOP_COLS * SHOP_ROWS;
+  const shopList =
+    cityId === 'kochi'
+      ? SHOPS.map(([local, en, kind]) => ({ local, en, kind, bg: null, fg: null }))
+      : Array.from({ length: totalSlots }, (_, idx) => {
+          const s = cfg.shops[idx % cfg.shops.length];
+          return {
+            local: s.local,
+            en: s.en,
+            kind: CATEGORY_TO_KIND[(s.category || '').toUpperCase()] || 'store',
+            bg: s.bg || null,
+            fg: s.fg || null,
+          };
+        });
+
+  shopList.forEach((shop, i) => {
     const x = (i % SHOP_COLS) * tw;
     const y = Math.floor(i / SHOP_COLS) * th;
-    const kind = shop[2];
-    const [bg, fg] = SIGN_COLOURS[rng.int(0, SIGN_COLOURS.length - 1)];
+    const kind = shop.kind;
+    const [defBg, defFg] = SIGN_COLOURS[rng.int(0, SIGN_COLOURS.length - 1)];
+    const bg = shop.bg || defBg;
+    const fg = shop.fg || defFg;
     c.save();
     c.beginPath();
     c.rect(x, y, tw, th);
@@ -494,7 +558,9 @@ export function buildShopAtlas(assets) {
       c.fillStyle = 'rgba(70,80,90,0.35)';
       c.fillRect(open.x, open.y, open.w, open.h);
       c.fillStyle = 'rgba(255,255,255,0.75)';
-      fitText(c, shop[0], open.x + open.w / 2, open.y + open.h / 2, open.w * 0.8, 44, 800);
+      if (isRtl) c.direction = 'rtl';
+      fitText(c, shop.local, open.x + open.w / 2, open.y + open.h / 2, open.w * 0.8, 44, 800);
+      c.direction = 'ltr';
       o.fillStyle = 'rgb(255,120,180)';
       o.fillRect(open.x, open.y, open.w, open.h);
     } else {
@@ -541,16 +607,18 @@ export function buildShopAtlas(assets) {
     c.lineWidth = 3;
     c.strokeRect(x + 5, y + 5, tw - 10, signH - 6);
     c.fillStyle = fg;
-    fitText(c, shop[0], x + tw / 2, y + 30, tw - 40, 40, 800);
+    if (isRtl) c.direction = 'rtl';
+    fitText(c, shop.local, x + tw / 2, y + 29, tw - 40, 38, 800);
+    c.direction = 'ltr';
     c.globalAlpha = 0.92;
-    fitText(c, shop[1], x + tw / 2, y + 60, tw - 60, 20, 700);
+    fitText(c, shop.en, x + tw / 2, y + 60, tw - 60, 20, 700);
     c.globalAlpha = 1;
     o.fillStyle = 'rgb(255,110,40)';
     o.fillRect(x + 4, y + 4, tw - 8, signH - 4);
     weather(c, x, y, tw, th, () => rng.next(), 0.7);
     c.restore();
   });
-  return { canvas, orm, count: SHOPS.length };
+  return { canvas, orm, count: shopList.length };
 }
 
 function drawGoods(c, kind, r, rng) {
@@ -644,7 +712,7 @@ const HOARDINGS = [
   { ml: 'കായൽ ഹോളിഡേയ്സ്', en: 'BACKWATER HOLIDAYS', sub: 'Houseboats · Alappuzha', bg: ['#0d5a3a', '#6db04a'], fg: '#ffffff', accent: '#fff59d' },
 ];
 
-export function buildHoardingAtlas(assets) {
+export function buildHoardingAtlas(assets, cityId = 'kochi') {
   const W = 2048;
   const H = 2048;
   const canvas = makeCanvas(W, H);
@@ -652,7 +720,24 @@ export function buildHoardingAtlas(assets) {
   const rng = new RNG(606);
   const tw = W / 2;
   const th = H / 4;
-  HOARDINGS.forEach((h, i) => {
+  const cfg = getCityConfig(cityId);
+  const isRtl = !!cfg.language?.rtl;
+  const list =
+    cityId === 'kochi'
+      ? HOARDINGS
+      : Array.from({ length: 8 }, (_, idx) => {
+          const item = cfg.hoardings[idx % cfg.hoardings.length];
+          return {
+            ml: item.local,
+            en: item.en,
+            sub: `${cfg.regionLabel} · ${cfg.language.label}`,
+            bg: [item.bg || '#0f172a', shade(item.bg || '#0f172a', 0.14)],
+            fg: '#ffffff',
+            accent: item.accent || '#facc15',
+          };
+        });
+
+  list.forEach((h, i) => {
     const x = (i % 2) * tw;
     const y = Math.floor(i / 2) * th;
     c.save();
@@ -677,12 +762,13 @@ export function buildHoardingAtlas(assets) {
     c.fillStyle = h.accent;
     c.fillRect(x + 60, y + th * 0.74, 150, 8);
     c.fillStyle = h.fg;
-    c.textAlign = 'left';
     c.textBaseline = 'middle';
-    fitText(c, h.ml, x + 60, y + th * 0.3, tw - 140, 118, 800, 'left');
-    fitText(c, h.en, x + 60, y + th * 0.58, tw - 140, 86, 800, 'left');
+    if (isRtl) c.direction = 'rtl';
+    fitText(c, h.ml, isRtl ? x + tw - 60 : x + 60, y + th * 0.3, tw - 140, 114, 800, isRtl ? 'right' : 'left');
+    c.direction = 'ltr';
+    fitText(c, h.en, x + 60, y + th * 0.58, tw - 140, 82, 800, 'left');
     c.globalAlpha = 0.9;
-    fitText(c, h.sub, x + 60, y + th * 0.86, tw - 140, 44, 400, 'left');
+    fitText(c, h.sub, x + 60, y + th * 0.86, tw - 140, 40, 400, 'left');
     c.globalAlpha = 1;
     // Frame.
     c.strokeStyle = '#2a2a2a';
@@ -691,7 +777,7 @@ export function buildHoardingAtlas(assets) {
     weather(c, x, y, tw, th, () => rng.next(), 0.45);
     c.restore();
   });
-  return { canvas, count: HOARDINGS.length, cols: 2, rows: 4 };
+  return { canvas, count: list.length, cols: 2, rows: 4 };
 }
 
 export { roundRect, font };

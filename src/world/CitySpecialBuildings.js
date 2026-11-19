@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { CITY_POIS } from './layout.js';
+import { SIGN_FONT } from '../core/Assets.js';
 
 function makeSignTexture(title, subtitle, bg, fg, accent = '#facc15') {
   const c = document.createElement('canvas');
@@ -15,13 +16,13 @@ function makeSignTexture(title, subtitle, bg, fg, accent = '#facc15') {
   ctx.lineWidth = 8;
   ctx.strokeRect(6, 6, c.width - 12, c.height - 12);
   ctx.fillStyle = fg;
-  ctx.font = 'bold 40px system-ui, -apple-system, sans-serif';
+  ctx.font = `700 34px ${SIGN_FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(title.slice(0, 26), c.width / 2, 58);
+  ctx.fillText(title.slice(0, 32), c.width / 2, 58);
   ctx.fillStyle = accent;
-  ctx.font = 'bold 24px system-ui, -apple-system, sans-serif';
-  ctx.fillText(subtitle.slice(0, 34), c.width / 2, 114);
+  ctx.font = `700 22px ${SIGN_FONT}`;
+  ctx.fillText(subtitle.slice(0, 40), c.width / 2, 114);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -98,7 +99,8 @@ export class CitySpecialBuildings {
       this._addBox(g, 7, 10.5, 4, 0, 5.25, 4, 0xfde047, 0.7);
       this._addBox(g, 7.6, 0.7, 4.6, 0, 10.8, 4, 0x7f1d1d, 0.65);
 
-      const sign = this._signBoard(s.name, 'SCHOOL ZONE · 30 KM/H', '#eab308', '#111827', '#b91c1c', 11, 3.2);
+      const tr = CITY_POIS.signTranslations || {};
+      const sign = this._signBoard(s.name, tr.schoolZone || 'SCHOOL ZONE · 30 KM/H', '#eab308', '#111827', '#b91c1c', 11, 3.2);
       sign.position.set(0, 7.8, 6.1);
       g.add(sign);
 
@@ -136,7 +138,8 @@ export class CitySpecialBuildings {
 
       // Attendant booth
       this._addBox(g, 7, 3.8, 4.5, 0, 1.9, -7.2, 0xf8fafc, 0.6);
-      const sign = this._signBoard(p.name, '24H PETROL PUMP · $30 REFUEL', '#991b1b', '#ffffff', '#facc15', 11, 2.8);
+      const tr = CITY_POIS.signTranslations || {};
+      const sign = this._signBoard(p.name, tr.petrolPump || '24H PETROL PUMP · $30 REFUEL', '#991b1b', '#ffffff', '#facc15', 11, 2.8);
       sign.position.set(0, 6.3, 6.6);
       g.add(sign);
 
@@ -161,7 +164,8 @@ export class CitySpecialBuildings {
       const blueBeacon = this._addBox(g, 1.6, 0.7, 1.0, 3.5, 9.75, 2.8, 0x3b82f6, 0.2, 0.2, 0x3b82f6);
       this.beacons.push(redBeacon, blueBeacon);
 
-      const sign = this._signBoard(p.name, 'POLICE STATION · OBEY SPEED LIMIT', '#1e3a8a', '#ffffff', '#60a5fa', 11.5, 3.0);
+      const tr = CITY_POIS.signTranslations || {};
+      const sign = this._signBoard(p.name, tr.policeStation || 'POLICE STATION · OBEY SPEED LIMIT', '#1e3a8a', '#ffffff', '#60a5fa', 11.5, 3.0);
       sign.position.set(0, 6.4, 3.6);
       g.add(sign);
 
@@ -187,11 +191,13 @@ export class CitySpecialBuildings {
       this._addBox(g, 36, 1.8, 4.2, 0, 6.2, 0, 0x0f172a, 0.45, 0.5);
       this._addBox(g, 36.2, 0.45, 4.4, 0, 7.2, 0, 0xfacc15, 0.35, 0.2, 0xfacc15);
 
-      const frontSign = this._signBoard(t.name, `TOLL PLAZA · $${t.fee || 40} AUTO DEDUCT`, '#0f172a', '#ffffff', '#facc15', 14, 2.6);
+      const tr = CITY_POIS.signTranslations || {};
+      const tollSub = `${tr.tollPlaza || 'TOLL PLAZA'} · $${t.fee || 40}`;
+      const frontSign = this._signBoard(t.name, tollSub, '#0f172a', '#ffffff', '#facc15', 14, 2.6);
       frontSign.position.set(0, 6.2, 2.15);
       g.add(frontSign);
 
-      const backSign = this._signBoard(t.name, `TOLL PLAZA · $${t.fee || 40} AUTO DEDUCT`, '#0f172a', '#ffffff', '#facc15', 14, 2.6);
+      const backSign = this._signBoard(t.name, tollSub, '#0f172a', '#ffffff', '#facc15', 14, 2.6);
       backSign.position.set(0, 6.2, -2.15);
       backSign.rotation.y = Math.PI;
       g.add(backSign);
@@ -229,7 +235,8 @@ export class CitySpecialBuildings {
       }
 
       if (isPlayerHome) {
-        const sign = this._signBoard('YOUR HOME', h.name.toUpperCase(), '#065f46', '#ffffff', '#34d399', 9.5, 2.5);
+        const tr = CITY_POIS.signTranslations || {};
+        const sign = this._signBoard(tr.yourHome || 'YOUR HOME', h.name.toUpperCase(), '#065f46', '#ffffff', '#34d399', 9.5, 2.5);
         sign.position.set(0, 6.4, 3.3);
         g.add(sign);
 

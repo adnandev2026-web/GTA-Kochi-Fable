@@ -248,6 +248,29 @@ export class AudioManager {
     if (s > 0.5) this._burst({ freq: 5200, q: 2, dur: 0.45, gain: 0.12 * s, type: 'bandpass' });
   }
 
+  shoot(weaponId = 'pistol', scale = 1.0) {
+    if (!this.ctx) return;
+    const g = clamp(scale, 0.1, 1.0);
+    if (weaponId === 'sniper') {
+      this._burst({ freq: 1800, q: 0.4, dur: 0.34, gain: 0.55 * g, type: 'lowpass', sweep: -1600 });
+      this._tone({ freq: 110, freq2: 36, dur: 0.26, gain: 0.35 * g, type: 'sawtooth', attack: 0.002 });
+    } else if (weaponId === 'rifle') {
+      this._burst({ freq: 2400, q: 0.6, dur: 0.11, gain: 0.28 * g, type: 'bandpass', sweep: -1400 });
+      this._tone({ freq: 170, freq2: 55, dur: 0.09, gain: 0.18 * g, type: 'triangle', attack: 0.002 });
+    } else {
+      this._burst({ freq: 2100, q: 0.7, dur: 0.13, gain: 0.26 * g, type: 'bandpass', sweep: -1200 });
+      this._tone({ freq: 195, freq2: 65, dur: 0.1, gain: 0.16 * g, type: 'triangle', attack: 0.002 });
+    }
+  }
+
+  hit(lethal = false) {
+    if (!this.ctx) return;
+    this._burst({ freq: lethal ? 480 : 950, q: 1.5, dur: 0.09, gain: lethal ? 0.22 : 0.12, type: 'bandpass' });
+    if (lethal) {
+      this._tone({ freq: 340, freq2: 140, dur: 0.18, gain: 0.12, type: 'sine', attack: 0.004 });
+    }
+  }
+
   setHorn(on, kind = 'car') {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;

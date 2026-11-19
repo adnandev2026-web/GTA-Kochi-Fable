@@ -49,6 +49,16 @@ class Ped {
     this.fx = 0;
     this.fz = 0;
     this.side = rng.float(-0.55, 0.55);
+    this.hp = 100;
+    this.state = 'walk';
+    this.ragTimer = 0;
+    this.rvx = 0;
+    this.rvy = 0;
+    this.rvz = 0;
+    this.fallRotX = 0;
+    this.fallRotZ = 0;
+    this.targetRotX = Math.PI / 2;
+    this.targetRotZ = 0;
   }
 }
 
@@ -114,10 +124,64 @@ export class Pedestrians {
     p.seg = 0;
     p.idle = 0;
     p.flee = 0;
+    p.hp = 100;
+    p.state = 'walk';
+    p.ragTimer = 0;
+    p.rvx = 0;
+    p.rvy = 0;
+    p.rvz = 0;
+    p.fallRotX = 0;
+    p.fallRotZ = 0;
+    p.object.rotation.set(0, p.heading, 0);
     this._sample(p);
     p.y = this.ground.height(p.x, p.z, 1, 2);
     p.heading = Math.atan2(p.dx, p.dz);
     return true;
+  }
+
+  hitPed(p, damage, impulse, isHeadshot = false) {
+    if (!p || p.state === 'ragdoll') return;
+    p.hp -= damage;
+    if (p.hp <= 0) {
+      p.hp = 0;
+      p.state = 'ragdoll';
+      p.ragTimer = 7.0;
+      p.flee = 0;
+      p.v = 0;
+      p.rvx = impulse ? impulse.x : 0;
+      p.rvy = Math.max(1.4, impulse ? impulse.y : 1.8);
+      p.rvz = impulse ? impulse.z : 0;
+      p.fallRotX = 0;
+      p.fallRotZ = 0;
+      const fx = Math.sin(p.heading);
+      const fz = Math.cos(p.heading);
+      const along = (p.rvx * fx + p.rvz * fz);
+      p.targetRotX = along >= 0 ? Math.PI * 0.48 : -Math.PI * 0.48;
+      p.targetRotZ = (Math.random() - 0.5) * 0.55;
+      p.character.locomotion(0, 0.016, false);
+      this.game.audio?.hit(true);
+      if (isHeadshot) {
+        this.game.hud?.toast('CRITICAL HEADSHOT', 1.8);
+      }
+      // Nearby pedestrians panic and flee
+      for (const other of this.active) {
+        if (other === p || !other.visible || other.state === 'ragdoll') continue;
+        const dx = other.x - p.x;
+        const dz = other.z - p.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 18 && dist > 0.1) {
+          other.fx = dx / dist;
+          other.fz = dz / dist;
+          other.flee = 3.6;
+        }
+      }
+    } else {
+      const len = Math.hypot(impulse?.x || 0, impulse?.z || 0) || 1;
+      p.fx = (impulse?.x || 0) / len;
+      p.fz = (impulse?.z || 0) / len;
+      p.flee = 3.0;
+      this.game.audio?.hit(false);
+    }
   }
 
   _sample(p) {
@@ -194,9 +258,33 @@ export class Pedestrians {
       }
       if (!visible) continue;
 
+      if (p.state === 'ragdoll') {
+        p.ragTimer -= dt;
+        p.rvx *= Math.exp(-3.4 * dt);
+        p.rvz *= Math.exp(-3.4 * dt);
+        p.rvy -= 17 * dt;
+        p.x += p.rvx * dt;
+        p.z += p.rvz * dt;
+        p.y += p.rvy * dt;
+        const ground = this.ground.height(p.x, p.z, p.y + 0.5, 0.6);
+        if (p.y <= ground + 0.14) {
+          p.y = ground + 0.14;
+          p.rvy = p.rvy < -2.2 ? -p.rvy * 0.18 : 0;
+          p.rvx *= Math.exp(-7 * dt);
+          p.rvz *= Math.exp(-7 * dt);
+        }
+        const k = 1 - Math.exp(-9 * dt);
+        p.fallRotX += (p.targetRotX - p.fallRotX) * k;
+        p.fallRotZ += (p.targetRotZ - p.fallRotZ) * k;
+        p.object.position.set(p.x, p.y, p.z);
+        p.object.rotation.set(p.fallRotX, p.heading, p.fallRotZ);
+        if (p.ragTimer <= 0) this._respawn(p, focus);
+        continue;
+      }
+
       let speed = p.speed;
       if (p.flee > 0) {
-        // Jump clear of a car and keep running for a moment.
+        // Jump clear of a car or gunfire and keep running for a moment.
         p.flee -= dt;
         speed = 4.6;
         p.x += p.fx * speed * dt;
@@ -235,7 +323,7 @@ export class Pedestrians {
       p.y = this.ground.height(p.x, p.z, p.y + 0.3, 0.6);
       if (speed > 0.1) p.heading = dampAngle(p.heading, Math.atan2(p.dx, p.dz), 8, dt);
       p.object.position.set(p.x, p.y, p.z);
-      p.object.rotation.y = p.heading;
+      p.object.rotation.set(0, p.heading, 0);
       p.character.locomotion(speed, dt, false);
       // Distant walkers animate at half rate.
       if (p.drawn && (d < 55 || (i + this._cursor) % 2 === 0)) p.character.update(d < 55 ? dt : dt * 2);
@@ -245,7 +333,7 @@ export class Pedestrians {
 
   collect(x, z, range, out, pool) {
     for (const p of this.active) {
-      if (!p.visible) continue;
+      if (!p.visible || p.state === 'ragdoll') continue;
       const dx = p.x - x;
       const dz = p.z - z;
       if (dx * dx + dz * dz > range * range) continue;
@@ -259,10 +347,13 @@ export class Pedestrians {
       ob.mass = 0.05;
       ob.ref = p;
       ob.onHit = (by, strength, nx, nz) => {
-        p.fx = -nx;
-        p.fz = -nz;
-        p.flee = 2.2;
-        void strength;
+        if (strength > 6.5) {
+          this.hitPed(p, 110, { x: -nx * strength * 0.7, y: 2.8, z: -nz * strength * 0.7 }, false);
+        } else {
+          p.fx = -nx;
+          p.fz = -nz;
+          p.flee = 2.2;
+        }
       };
       out.push(ob);
     }

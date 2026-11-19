@@ -14,6 +14,12 @@
       content="Customize your character, choose your home and vehicle, and explore Kerala and famous world cities in 3D."
     />
     <link rel="icon" type="image/jpeg" href="/favicon.jpg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@500;700&family=Noto+Sans+JP:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -29,6 +35,33 @@
       <div id="minimap-wrap">
         <canvas id="minimap" width="220" height="220"></canvas>
         <div id="compass">N</div>
+      </div>
+
+      <div id="crosshair" class="hidden" aria-hidden="true">
+        <span class="ch-dot"></span>
+        <span class="ch-t"></span>
+        <span class="ch-r"></span>
+        <span class="ch-b"></span>
+        <span class="ch-l"></span>
+      </div>
+
+      <div id="sniper-scope" class="hidden" aria-hidden="true">
+        <div class="scope-vignette"></div>
+        <div class="scope-ring">
+          <div class="scope-line-h"></div>
+          <div class="scope-line-v"></div>
+          <div class="scope-center-dot"></div>
+          <div class="scope-mil scope-mil-l"></div>
+          <div class="scope-mil scope-mil-r"></div>
+          <div class="scope-mil scope-mil-t"></div>
+          <div class="scope-mil scope-mil-b"></div>
+          <div id="scope-zoom-label">4.0x</div>
+        </div>
+      </div>
+
+      <div id="weapon-hud" class="hidden">
+        <div id="weapon-hud-name">Unarmed</div>
+        <div id="weapon-hud-sub">Q / Tab · Weapon Wheel</div>
       </div>
 
       <div id="speedo" class="hidden">
@@ -51,7 +84,8 @@
           <kbd>W A S D</kbd><span>Move</span>
           <kbd>Shift</kbd><span>Run</span>
           <kbd>Space</kbd><span>Jump</span>
-          <kbd>Mouse</kbd><span>Look</span>
+          <kbd>LMB / RMB</kbd><span>Fire / Aim</span>
+          <kbd>Q / 1-4</kbd><span>Weapons</span>
           <kbd>E</kbd><span>Enter vehicle</span>
         </div>
         <div id="controls-drive" class="controls-grid hidden">

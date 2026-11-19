@@ -259,6 +259,11 @@ export class Character {
     this.runRef = 4.4;
     this.pose = null;
     this.air = 0;
+    this.weaponId = 'unarmed';
+    this._weaponMesh = null;
+    this._muzzleNode = null;
+    this._aiming = false;
+    this._aimPitch = 0;
 
     if (appearance) {
       this.applyAppearance(appearance);
@@ -274,6 +279,112 @@ export class Character {
       });
     }
     this._customAttachments = [];
+  }
+
+  _clearWeapon() {
+    if (this._weaponMesh) {
+      this._weaponMesh.parent?.remove(this._weaponMesh);
+      this._weaponMesh.traverse?.((c) => {
+        c.geometry?.dispose?.();
+        c.material?.dispose?.();
+      });
+      this._weaponMesh = null;
+      this._muzzleNode = null;
+    }
+  }
+
+  setWeapon(weaponId = 'unarmed') {
+    const next = weaponId || 'unarmed';
+    if (next === this.weaponId && (next === 'unarmed' || this._weaponMesh)) return;
+    this.weaponId = next;
+    this._clearWeapon();
+    if (next === 'unarmed') return;
+    const hand = this.bones.get('RightHand') || this.bones.get('RightForeArm');
+    if (!hand) return;
+
+    const g = new THREE.Group();
+    g.scale.setScalar(this._invScale);
+    const darkMetal = new THREE.MeshStandardMaterial({ color: '#18181b', roughness: 0.35, metalness: 0.78 });
+    const steel = new THREE.MeshStandardMaterial({ color: '#475569', roughness: 0.28, metalness: 0.85 });
+    const polymer = new THREE.MeshStandardMaterial({ color: '#27272a', roughness: 0.65, metalness: 0.15 });
+    const optic = new THREE.MeshStandardMaterial({ color: '#38bdf8', roughness: 0.15, metalness: 0.6 });
+
+    const muzzle = new THREE.Object3D();
+
+    if (next === 'pistol') {
+      const slide = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.042, 0.21), darkMetal);
+      slide.position.set(0, 0.03, 0.08);
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.11, 0.045), polymer);
+      grip.position.set(0, -0.03, 0.01);
+      grip.rotation.x = 0.22;
+      g.add(slide, grip);
+      muzzle.position.set(0, 0.036, 0.19);
+    } else if (next === 'rifle') {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.075, 0.42), darkMetal);
+      body.position.set(0, 0.03, 0.14);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.36, 8), steel);
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.set(0, 0.038, 0.5);
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.095, 0.22), polymer);
+      stock.position.set(0, 0.015, -0.15);
+      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.16, 0.06), polymer);
+      mag.position.set(0, -0.07, 0.18);
+      mag.rotation.x = 0.24;
+      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.036, 0.07), darkMetal);
+      sight.position.set(0, 0.082, 0.14);
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.1, 0.042), polymer);
+      grip.position.set(0, -0.03, 0.02);
+      grip.rotation.x = 0.2;
+      g.add(body, barrel, stock, mag, sight, grip);
+      muzzle.position.set(0, 0.038, 0.68);
+    } else if (next === 'sniper') {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.08, 0.52), polymer);
+      body.position.set(0, 0.025, 0.14);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.016, 0.62, 10), steel);
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.set(0, 0.042, 0.66);
+      const brake = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.032, 0.06), darkMetal);
+      brake.position.set(0, 0.042, 0.96);
+      const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.28, 12), darkMetal);
+      scope.rotation.x = Math.PI / 2;
+      scope.position.set(0, 0.102, 0.18);
+      const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.021, 0.02, 12), optic);
+      lens.rotation.x = Math.PI / 2;
+      lens.position.set(0, 0.102, 0.325);
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.11, 0.28), polymer);
+      stock.position.set(0, 0.01, -0.22);
+      g.add(body, barrel, brake, scope, lens, stock);
+      muzzle.position.set(0, 0.042, 0.99);
+    }
+
+    // Align local +Z forward when hand points forward
+    g.rotation.set(Math.PI / 2, 0, -Math.PI / 2);
+    g.position.set(0, 0.05 / sScaleSafe(this._invScale), 0);
+    g.add(muzzle);
+    g.traverse((c) => {
+      if (c.isMesh) {
+        c.castShadow = true;
+        c.frustumCulled = false;
+      }
+    });
+    hand.add(g);
+    this._weaponMesh = g;
+    this._muzzleNode = muzzle;
+  }
+
+  setAim(aiming, pitch = 0) {
+    this._aiming = !!aiming;
+    this._aimPitch = pitch || 0;
+  }
+
+  getMuzzleWorldPos(out = new THREE.Vector3()) {
+    if (this._muzzleNode) {
+      this._muzzleNode.getWorldPosition(out);
+      return out;
+    }
+    this.root.getWorldPosition(out);
+    out.y += 1.38;
+    return out;
   }
 
   applyAppearance(app) {
@@ -341,6 +452,22 @@ export class Character {
           const visor = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.055, 0.07), visorMat);
           visor.position.set(0, 0.085, 0.105);
           headGroup.add(shell, visor);
+        } else if (app.hat === 'ghutra') {
+          const clothMat = new THREE.MeshStandardMaterial({ color: app.hatColor || '#f8fafc', roughness: 0.72 });
+          const cap = new THREE.Mesh(new THREE.SphereGeometry(0.118, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.56), clothMat);
+          cap.position.set(0, 0.102, -0.005);
+          const drape = new THREE.Mesh(new THREE.CylinderGeometry(0.116, 0.152, 0.25, 16, 1, true, Math.PI * 0.25, Math.PI * 1.5), clothMat);
+          drape.position.set(0, -0.005, -0.015);
+          const agalMat = new THREE.MeshStandardMaterial({ color: '#111827', roughness: 0.45 });
+          const agal = new THREE.Mesh(new THREE.TorusGeometry(0.112, 0.015, 8, 22), agalMat);
+          agal.rotation.x = Math.PI / 2;
+          agal.position.set(0, 0.118, -0.004);
+          headGroup.add(cap, drape, agal);
+        } else if (app.hat === 'kasa') {
+          const strawMat = new THREE.MeshStandardMaterial({ color: app.hatColor || '#c29b61', roughness: 0.85 });
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.12, 20), strawMat);
+          cone.position.set(0, 0.165, 0);
+          headGroup.add(cone);
         }
       }
 
@@ -412,8 +539,8 @@ export class Character {
       this._customAttachments.push(headGroup);
     }
 
-    // Shirt detail (Hoodie hood / Kurta collar)
-    if (torso && (app.shirtStyle === 'hoodie' || app.shirtStyle === 'polo' || app.shirtStyle === 'kurta')) {
+    // Shirt detail (Hoodie hood / Kurta / Kimono / Kandura)
+    if (torso && (app.shirtStyle === 'hoodie' || app.shirtStyle === 'polo' || app.shirtStyle === 'kurta' || app.shirtStyle === 'kimono_top' || app.shirtStyle === 'kandura_top')) {
       const shirtDetail = new THREE.Group();
       shirtDetail.scale.setScalar(s);
       const collarMat = new THREE.MeshStandardMaterial({ color: app.shirtColor || '#e6e8eb', roughness: 0.78 });
@@ -426,6 +553,22 @@ export class Character {
         tunic.position.set(0, -0.18, 0);
         tunic.scale.set(1.05, 1, 0.72);
         shirtDetail.add(tunic);
+      } else if (app.shirtStyle === 'kimono_top') {
+        const jacket = new THREE.Mesh(new THREE.CylinderGeometry(0.185, 0.205, 0.36, 14), collarMat);
+        jacket.position.set(0, -0.06, 0);
+        jacket.scale.set(1.08, 1, 0.76);
+        const obiMat = new THREE.MeshStandardMaterial({ color: '#b45309', roughness: 0.6 });
+        const obi = new THREE.Mesh(new THREE.CylinderGeometry(0.195, 0.195, 0.085, 14), obiMat);
+        obi.position.set(0, -0.19, 0);
+        obi.scale.set(1.08, 1, 0.76);
+        shirtDetail.add(jacket, obi);
+      } else if (app.shirtStyle === 'kandura_top') {
+        const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.175, 0.195, 0.42, 14), collarMat);
+        upper.position.set(0, -0.04, 0);
+        upper.scale.set(1.06, 1, 0.74);
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.095, 0.05, 14), collarMat);
+        neck.position.set(0, 0.14, 0);
+        shirtDetail.add(upper, neck);
       } else {
         const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.11, 0.045, 14), collarMat);
         collar.position.set(0, 0.13, 0);
@@ -433,6 +576,36 @@ export class Character {
       }
       torso.add(shirtDetail);
       this._customAttachments.push(shirtDetail);
+    }
+
+    // Traditional lower garments attached to Hips (Kerala Mundu, Japanese Hakama, Emirati Kandura Robe)
+    if (hips && (app.pantsStyle === 'mundu' || app.pantsStyle === 'hakama' || app.pantsStyle === 'kandura_robe')) {
+      const lowerGroup = new THREE.Group();
+      lowerGroup.scale.setScalar(s);
+      const col = app.pantsStyle === 'kandura_robe' ? (app.shirtColor || app.pantsColor || '#f8fafc') : (app.pantsColor || '#f8fafc');
+      const wrapMat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.78 });
+      if (app.pantsStyle === 'mundu') {
+        const mundu = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.215, 0.72, 16), wrapMat);
+        mundu.position.set(0, -0.34, 0);
+        mundu.scale.set(1.04, 1, 0.8);
+        const kasavuMat = new THREE.MeshStandardMaterial({ color: '#d4af37', roughness: 0.35, metalness: 0.45 });
+        const kasavu = new THREE.Mesh(new THREE.CylinderGeometry(0.213, 0.217, 0.055, 16), kasavuMat);
+        kasavu.position.set(0, -0.66, 0);
+        kasavu.scale.set(1.04, 1, 0.8);
+        lowerGroup.add(mundu, kasavu);
+      } else if (app.pantsStyle === 'hakama') {
+        const hakama = new THREE.Mesh(new THREE.CylinderGeometry(0.185, 0.275, 0.76, 16), wrapMat);
+        hakama.position.set(0, -0.36, 0);
+        hakama.scale.set(1.08, 1, 0.82);
+        lowerGroup.add(hakama);
+      } else if (app.pantsStyle === 'kandura_robe') {
+        const robe = new THREE.Mesh(new THREE.CylinderGeometry(0.185, 0.235, 0.82, 16), wrapMat);
+        robe.position.set(0, -0.38, 0);
+        robe.scale.set(1.06, 1, 0.82);
+        lowerGroup.add(robe);
+      }
+      hips.add(lowerGroup);
+      this._customAttachments.push(lowerGroup);
     }
 
     // Overcoat (bomber, leather, trench, denim)
@@ -447,7 +620,6 @@ export class Character {
       });
       const chestH = app.overcoat === 'trench' ? 0.44 : 0.34;
       const chestY = app.overcoat === 'trench' ? -0.06 : -0.01;
-      // Left & right open front panels + back panel so shirt remains visible in front
       for (const sx of [-0.095, 0.095]) {
         const panel = new THREE.Mesh(new THREE.BoxGeometry(0.135, chestH, 0.23), coatMat);
         panel.position.set(sx, chestY, 0.005);
@@ -459,7 +631,6 @@ export class Character {
       back.castShadow = true;
       coatGroup.add(back);
 
-      // Collar lapels
       const collar = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.065, 0.18), coatMat);
       collar.position.set(0, 0.145, -0.015);
       coatGroup.add(collar);
@@ -543,6 +714,22 @@ export class Character {
   update(dt) {
     if (this.pose) return;
     this.mixer.update(dt);
+    if (this.weaponId !== 'unarmed') {
+      const rArm = this.bones.get('RightArm');
+      const rFore = this.bones.get('RightForeArm');
+      const lArm = this.bones.get('LeftArm');
+      if (this._aiming && rArm && rFore) {
+        rArm.rotation.x += -1.32 - this._aimPitch * 0.75;
+        rArm.rotation.z += -0.18;
+        rFore.rotation.y += 0.25;
+        if (lArm && (this.weaponId === 'rifle' || this.weaponId === 'sniper')) {
+          lArm.rotation.x += -1.18 - this._aimPitch * 0.7;
+          lArm.rotation.z += 0.38;
+        }
+      } else if (rFore && (this.weaponId === 'rifle' || this.weaponId === 'sniper')) {
+        rFore.rotation.x -= 0.45;
+      }
+    }
   }
 
   setVisible(v) {
@@ -550,7 +737,12 @@ export class Character {
   }
 
   dispose() {
+    this._clearWeapon();
     this._clearAttachments();
     this.mixer.stopAllAction();
   }
+}
+
+function sScaleSafe(invScale) {
+  return invScale > 0 ? invScale : 1;
 }

@@ -44,9 +44,15 @@ export class CameraController {
       if (vehicle) this.lookYaw = 0;
       else this.yaw += this.lookYaw;
     }
-    this.zoom = clamp(this.zoom + input.wheel * 0.1, 0.6, 1.9);
-    const mdx = input.mouseDX * input.sensitivity;
-    const mdy = input.mouseDY * input.sensitivity;
+    const ws = this.game.weaponSystem;
+    const isScoped = !vehicle && ws && ws.currentId === 'sniper' && ws.aiming;
+    const isAds = !vehicle && ws && ws.aiming && ws.currentId !== 'unarmed';
+    if (!isScoped) {
+      this.zoom = clamp(this.zoom + input.wheel * 0.1, 0.6, 1.9);
+    }
+    const sensScale = isScoped ? 1 / Math.max(1.2, ws.sniperZoom * 0.65) : isAds ? 0.65 : 1;
+    const mdx = input.mouseDX * input.sensitivity * sensScale;
+    const mdy = input.mouseDY * input.sensitivity * sensScale;
 
     let want;
     let height;
@@ -72,15 +78,22 @@ export class CameraController {
       // Look slightly ahead of the car at speed.
       _target.x += Math.sin(vehicle.heading) * sf * 1.6;
       _target.z += Math.cos(vehicle.heading) * sf * 1.6;
+    } else if (isScoped) {
+      this.yaw -= mdx;
+      this.pitch = clamp(this.pitch + mdy, -1.15, 1.15);
+      want = 0.05;
+      _target.set(player.pos.x, player.pos.y + 1.58, player.pos.z);
+      fov = this.baseFov / ws.sniperZoom;
     } else {
       this.yaw -= mdx;
-      this.pitch = clamp(this.pitch + mdy, -0.55, 1.25);
-      want = 3.9 * this.zoom;
+      this.pitch = clamp(this.pitch + mdy, -0.65, 1.25);
+      want = isAds ? 2.15 : 3.9 * this.zoom;
       // Over-the-shoulder offset.
       const rx = Math.cos(this.yaw);
       const rz = -Math.sin(this.yaw);
-      _target.set(player.pos.x + rx * 0.32, player.pos.y + 1.52, player.pos.z + rz * 0.32);
-      fov = this.baseFov + saturate(player.speed / 7) * 4;
+      const shoulder = isAds ? 0.56 : 0.32;
+      _target.set(player.pos.x + rx * shoulder, player.pos.y + 1.52, player.pos.z + rz * shoulder);
+      fov = isAds ? 44 : this.baseFov + saturate(player.speed / 7) * 4;
     }
 
     if (!this.initialised) {
@@ -88,37 +101,40 @@ export class CameraController {
       this.smoothDist = want;
       this.initialised = true;
     }
-    const follow = vehicle ? 16 : 18;
+    const follow = isScoped ? 40 : vehicle ? 16 : 18;
     this.target.x = damp(this.target.x, _target.x, follow, dt);
     this.target.z = damp(this.target.z, _target.z, follow, dt);
-    this.target.y = damp(this.target.y, _target.y, vehicle ? 9 : 12, dt);
+    this.target.y = damp(this.target.y, _target.y, isScoped ? 30 : vehicle ? 9 : 12, dt);
 
     const yaw = this.yaw + (vehicle ? this.lookYaw : 0);
     const cp = Math.cos(this.pitch);
     _dir.set(Math.sin(yaw) * cp, Math.sin(this.pitch), Math.cos(yaw) * cp);
 
-    // Obstruction: shorten the boom rather than clip through buildings, decks or the ground.
     const world = this.game.world;
-    let allowed = world.colliders.raycast(this.target.x, this.target.y, this.target.z, _dir.x, _dir.y, _dir.z, want + 0.4) - 0.35;
-    allowed = clamp(allowed, 0.7, want);
-    for (let i = 1; i <= 4; i++) {
-      const d = (allowed * i) / 4;
-      const x = this.target.x + _dir.x * d;
-      const y = this.target.y + _dir.y * d;
-      const z = this.target.z + _dir.z * d;
-      const floor = world.ground.height(x, z, y, 0.4) + 0.3;
-      if (y < floor) {
-        allowed = Math.max(0.7, d * ((this.target.y - floor) / Math.max(0.01, this.target.y - y)));
-        break;
-      }
-      const ceil = world.ground.ceiling(x, z, this.target.y - 0.5);
-      if (y > ceil - 0.25) {
-        allowed = Math.max(0.7, d * ((ceil - 0.25 - this.target.y) / Math.max(0.01, y - this.target.y)));
-        break;
+    let allowed = want;
+    if (!isScoped) {
+      // Obstruction: shorten the boom rather than clip through buildings, decks or the ground.
+      allowed = world.colliders.raycast(this.target.x, this.target.y, this.target.z, _dir.x, _dir.y, _dir.z, want + 0.4) - 0.35;
+      allowed = clamp(allowed, 0.7, want);
+      for (let i = 1; i <= 4; i++) {
+        const d = (allowed * i) / 4;
+        const x = this.target.x + _dir.x * d;
+        const y = this.target.y + _dir.y * d;
+        const z = this.target.z + _dir.z * d;
+        const floor = world.ground.height(x, z, y, 0.4) + 0.3;
+        if (y < floor) {
+          allowed = Math.max(0.7, d * ((this.target.y - floor) / Math.max(0.01, this.target.y - y)));
+          break;
+        }
+        const ceil = world.ground.ceiling(x, z, this.target.y - 0.5);
+        if (y > ceil - 0.25) {
+          allowed = Math.max(0.7, d * ((ceil - 0.25 - this.target.y) / Math.max(0.01, y - this.target.y)));
+          break;
+        }
       }
     }
     // Pull in instantly, ease back out.
-    if (allowed < this.smoothDist) this.smoothDist = allowed;
+    if (isScoped || allowed < this.smoothDist) this.smoothDist = allowed;
     else this.smoothDist = damp(this.smoothDist, allowed, 4, dt);
 
     const cam = this.camera;
@@ -126,15 +142,24 @@ export class CameraController {
     const minY = world.ground.height(cam.position.x, cam.position.z, cam.position.y + 0.5, 1) + 0.25;
     if (cam.position.y < minY) cam.position.y = minY;
     if (this.shake > 0.001) {
-      const s = this.shake * 0.16;
+      const s = this.shake * (isScoped ? 0.05 : 0.16);
       cam.position.x += (Math.random() - 0.5) * s;
       cam.position.y += (Math.random() - 0.5) * s;
       cam.position.z += (Math.random() - 0.5) * s;
       this.shake = damp(this.shake, 0, 7, dt);
     }
-    cam.lookAt(this.target.x, this.target.y + (vehicle ? 0.25 : 0.1), this.target.z);
+    if (isScoped) {
+      // Look forward away from player along -_dir
+      cam.lookAt(
+        cam.position.x - _dir.x * 20,
+        cam.position.y - _dir.y * 20,
+        cam.position.z - _dir.z * 20,
+      );
+    } else {
+      cam.lookAt(this.target.x, this.target.y + (vehicle ? 0.25 : 0.1), this.target.z);
+    }
     if (Math.abs(cam.fov - fov) > 0.05) {
-      cam.fov = damp(cam.fov, fov, 4, dt);
+      cam.fov = damp(cam.fov, fov, isScoped ? 18 : 4, dt);
       cam.updateProjectionMatrix();
     }
   }

@@ -115,3 +115,38 @@ export async function recordEconomyEventApi(
 export async function getCityPlayersCount(cityId: string) {
   return req<{ ok: boolean; count: number }>(`/api/cities/${encodeURIComponent(cityId)}/players`);
 }
+
+export interface RoomSummary {
+  code: string;
+  cityId: string;
+  name: string;
+  isPrivate: boolean;
+  hostName: string;
+  playerCount: number;
+}
+
+export async function listRoomsApi(cityId?: string) {
+  const qs = cityId ? `?cityId=${encodeURIComponent(cityId)}` : '';
+  return req<{ ok: boolean; rooms: RoomSummary[] }>(`/api/rooms${qs}`);
+}
+
+export async function createRoomApi(payload: {
+  cityId: string;
+  name: string;
+  isPrivate: boolean;
+  hostName: string;
+}) {
+  return req<{ ok: boolean; room: RoomSummary }>('/api/rooms', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function lookupRoomApi(code: string) {
+  return req<{ ok: boolean; room: RoomSummary }>(`/api/rooms/${encodeURIComponent(code.toUpperCase())}`);
+}
+
+export async function fetchCityOsmApi(cityId: string) {
+  return req<{ ok: boolean; osm: any }>(`/api/osm/city/${encodeURIComponent(cityId)}`);
+}
+

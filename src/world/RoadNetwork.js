@@ -1,7 +1,7 @@
 // Road graph: smooth centrelines, junction trimming, flyover profiles, traffic lanes and
 // the sidewalk graph that pedestrians use. Pure data - no rendering in here.
 
-import { NODES, EDGES, FLYOVERS, ROAD_CLASSES, laneOffset, carriageHalf, FLYOVER_DECK_HALF } from './layout.js';
+import { CITY_POIS, NODES, EDGES, FLYOVERS, ROAD_CLASSES, laneOffset, carriageHalf, FLYOVER_DECK_HALF } from './layout.js';
 import { smoothPolyline, lineIntersect, clamp, lerp } from '../utils/math.js';
 
 const STEP = 3;
@@ -270,7 +270,7 @@ export class RoadNetwork {
       }
       for (let i = 0; i < n; i++) {
         const arm = node.arms[i];
-        arm.trim = clamp(need[i] + JUNCTION_MARGIN, 6, Math.min(70, arm.edge.length * 0.45));
+        arm.trim = clamp(need[i] + JUNCTION_MARGIN, 6, Math.min(48, arm.edge.length * 0.42));
         arm.edge.trim[arm.end] = arm.trim;
       }
       node.isJunction = true;
@@ -373,6 +373,7 @@ export class RoadNetwork {
       lanes.push(l);
       return l;
     };
+    const ts = CITY_POIS.trafficSide === 'right' ? -1 : 1;
     // --- lanes along edges -----------------------------------------------------------
     for (const e of this.edges) {
       e.lanePaths = { 1: [], [-1]: [] };
@@ -397,7 +398,7 @@ export class RoadNetwork {
           lane.inner = inner;
           lane.elevStart = elevStart;
           lane.elevFinish = elevFinish;
-          const off = laneOffset(e.cls, i) * dir;
+          const off = laneOffset(e.cls, i) * dir * ts;
           for (let k = 0; k <= steps; k++) {
             const s = lerp(from, to, k / steps);
             const fr = e.at(s);
@@ -452,13 +453,24 @@ export class RoadNetwork {
             else if (ang < -0.62) turn = 'L';
             if (Math.abs(ang) > 2.7) continue; // no U-turns
             let target = null;
-            if (turn === 'L') {
-              if (kIn === surfaceIn.length - 1) target = surfaceOut[surfaceOut.length - 1];
-            } else if (turn === 'R') {
-              if (kIn === 0) target = surfaceOut[0];
+            if (ts === 1) {
+              if (turn === 'L') {
+                if (kIn === surfaceIn.length - 1) target = surfaceOut[surfaceOut.length - 1];
+              } else if (turn === 'R') {
+                if (kIn === 0) target = surfaceOut[0];
+              } else {
+                const t = surfaceIn.length > 1 ? kIn / (surfaceIn.length - 1) : 0.5;
+                target = surfaceOut[Math.round(t * (surfaceOut.length - 1))];
+              }
             } else {
-              const t = surfaceIn.length > 1 ? kIn / (surfaceIn.length - 1) : 0.5;
-              target = surfaceOut[Math.round(t * (surfaceOut.length - 1))];
+              if (turn === 'R') {
+                if (kIn === surfaceIn.length - 1) target = surfaceOut[surfaceOut.length - 1];
+              } else if (turn === 'L') {
+                if (kIn === 0) target = surfaceOut[0];
+              } else {
+                const t = surfaceIn.length > 1 ? kIn / (surfaceIn.length - 1) : 0.5;
+                target = surfaceOut[Math.round(t * (surfaceOut.length - 1))];
+              }
             }
             if (!target) continue;
             const c = make();
@@ -466,7 +478,7 @@ export class RoadNetwork {
             c.turn = turn;
             c.node = node;
             c.speed = turn === 'S' ? Math.min(lane.speed, target.speed) * 0.85 : 6.2;
-            c.freeLeft = turn === 'L';
+            c.freeLeft = ts === 1 ? turn === 'L' : turn === 'R';
             buildConnector(c, lane, target);
             c.next.push({ path: target, turn: 'S' });
             lane.next.push({ path: c, turn });

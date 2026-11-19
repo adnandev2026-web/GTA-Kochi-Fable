@@ -14,6 +14,7 @@ import {
   type CharacterAppearance,
   type DeviceMode,
 } from './src/shared/catalog.js';
+import { getCityOsmData } from './server/osmService.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -42,7 +43,6 @@ export interface PlayerRecord {
   updatedAt: string;
 }
 
-// Mongoose Setup (MongoDB Atlas when MONGODB_URI is provided, graceful in-memory fallback otherwise)
 mongoose.set('bufferCommands', false);
 
 const playerSchema = new mongoose.Schema(
@@ -53,8 +53,8 @@ const playerSchema = new mongoose.Schema(
     photoURL: { type: String, default: '' },
     money: { type: Number, default: STARTING_MONEY, min: 0 },
     deviceMode: { type: String, enum: ['mobile', 'laptop', 'desktop'], default: 'desktop' },
-    selectedCity: { type: String, default: 'kochi' },
-    selectedHome: { type: String, default: 'kochi_kundannoor' },
+    selectedCity: { type: String, default: 'pookkottumpadam' },
+    selectedHome: { type: String, default: 'pkp_bazaar' },
     selectedVehicle: { type: String, default: 'hatchback' },
     ownedVehicles: { type: [String], default: () => [...STARTER_VEHICLES] },
     appearance: { type: mongoose.Schema.Types.Mixed, default: () => ({ ...DEFAULT_APPEARANCE }) },
@@ -188,6 +188,13 @@ function resolveUid(req: express.Request): string | null {
   return null;
 }
 
+function makeRoomCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let out = '';
+  for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
 async function startServer() {
   await initDatabase();
 
@@ -196,7 +203,6 @@ async function startServer() {
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser(COOKIE_SECRET));
 
-  // Health endpoint for Render & monitoring
   app.get('/api/health', (_req, res) => {
     res.json({
       ok: true,
@@ -207,7 +213,17 @@ async function startServer() {
     });
   });
 
-  // Cookie preference management
+  // Real-world OpenStreetMap city stream endpoint
+  app.get('/api/osm/city/:cityId', async (req, res) => {
+    try {
+      const cityId = String(req.params.cityId || 'pookkottumpadam').toLowerCase();
+      const data = await getCityOsmData(cityId);
+      res.json({ ok: true, osm: data });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message || 'Failed to load OSM map' });
+    }
+  });
+
   app.get('/api/cookies/status', (req, res) => {
     res.json({
       consent: req.cookies?.gta_cookie_consent || null,
@@ -230,7 +246,6 @@ async function startServer() {
     res.json({ ok: true, deviceMode });
   });
 
-  // Session sync with Firebase Auth Google Sign-In
   app.post('/api/auth/session', async (req, res) => {
     const { uid, email, displayName, photoURL, deviceMode } = req.body || {};
     if (!uid || typeof uid !== 'string') {
@@ -246,9 +261,7 @@ async function startServer() {
 
     res.cookie('gta_uid', cleanUid, { ...getCookieOpts(), signed: true });
     res.cookie('gta_session_active', '1', getCookieOpts());
-    if (profile.deviceMode) {
-      res.cookie('gta_device', profile.deviceMode, getCookieOpts());
-    }
+    if (profile.deviceMode) res.cookie('gta_device', profile.deviceMode, getCookieOpts());
     res.json({ ok: true, profile });
   });
 
@@ -273,7 +286,6 @@ async function startServer() {
     res.json({ ok: true, profile });
   });
 
-  // Vehicle dealership purchase
   app.post('/api/vehicles/buy', async (req, res) => {
     const uid = resolveUid(req) || req.body?.uid;
     const vehicleId = String(req.body?.vehicleId || '');
@@ -318,7 +330,6 @@ async function startServer() {
     res.json({ ok: true, profile: updated });
   });
 
-  // Dynamic economy updates (playtime bonus, police fine, toll gate, petrol pump)
   app.post('/api/economy/event', async (req, res) => {
     const uid = resolveUid(req) || req.body?.uid;
     if (!uid) return res.status(401).json({ error: 'Not signed in' });
@@ -369,13 +380,14 @@ async function startServer() {
     res.json({ ok: true, delta, money: player.money, stats: player.stats });
   });
 
-  // WebSocket Multiplayer Rooms by cityId
+  // ------------------------------------------------------------------ MULTIPLAYER ROOMS + WEBRTC SIGNALING
   const server = http.createServer(app);
   const wss = new WebSocketServer({ noServer: true });
 
   interface PeerState {
     id: string;
     uid: string;
+    roomCode: string;
     cityId: string;
     name: string;
     appearance: CharacterAppearance;
@@ -387,29 +399,71 @@ async function startServer() {
     vehicleType: string | null;
     vehicleColor: number | null;
     onFoot: boolean;
+    weapon: string;
+    aimPitch: number;
+    speaking: boolean;
     ws: WebSocket;
   }
 
-  const rooms = new Map<string, Map<string, PeerState>>();
-
-  function getRoom(cityId: string) {
-    let r = rooms.get(cityId);
-    if (!r) {
-      r = new Map();
-      rooms.set(cityId, r);
-    }
-    return r;
+  interface RoomRecord {
+    code: string;
+    cityId: string;
+    name: string;
+    isPrivate: boolean;
+    hostName: string;
+    createdAt: number;
+    peers: Map<string, PeerState>;
   }
 
-  function broadcast(cityId: string, exceptId: string | null, payload: unknown) {
-    const room = rooms.get(cityId);
+  const rooms = new Map<string, RoomRecord>();
+
+  // Seed default open public room for every city
+  for (const c of CITIES_CATALOG) {
+    const code = `PUB-${c.id.slice(0, 4).toUpperCase()}`;
+    rooms.set(code, {
+      code,
+      cityId: c.id,
+      name: `${c.name} Public Lobby`,
+      isPrivate: false,
+      hostName: 'Global Server',
+      createdAt: Date.now(),
+      peers: new Map(),
+    });
+  }
+
+  function getOrCreateRoom(code: string, cityId: string, name?: string, isPrivate = false, hostName = 'Host'): RoomRecord {
+    const cleanCode = code.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 16) || `PUB-${cityId.slice(0, 4).toUpperCase()}`;
+    let room = rooms.get(cleanCode);
+    if (!room) {
+      room = {
+        code: cleanCode,
+        cityId,
+        name: (name || `${cityId.toUpperCase()} Room ${cleanCode}`).slice(0, 40),
+        isPrivate,
+        hostName: hostName.slice(0, 28),
+        createdAt: Date.now(),
+        peers: new Map(),
+      };
+      rooms.set(cleanCode, room);
+    }
+    return room;
+  }
+
+  function broadcast(roomCode: string, exceptId: string | null, payload: unknown) {
+    const room = rooms.get(roomCode);
     if (!room) return;
     const msg = JSON.stringify(payload);
-    for (const [id, peer] of room) {
+    for (const [id, peer] of room.peers) {
       if (id === exceptId) continue;
-      if (peer.ws.readyState === WebSocket.OPEN) {
-        peer.ws.send(msg);
-      }
+      if (peer.ws.readyState === WebSocket.OPEN) peer.ws.send(msg);
+    }
+  }
+
+  function sendToPeer(roomCode: string, targetId: string, payload: unknown) {
+    const room = rooms.get(roomCode);
+    const target = room?.peers.get(targetId);
+    if (target && target.ws.readyState === WebSocket.OPEN) {
+      target.ws.send(JSON.stringify(payload));
     }
   }
 
@@ -427,12 +481,73 @@ async function startServer() {
       vehicleType: p.vehicleType,
       vehicleColor: p.vehicleColor,
       onFoot: p.onFoot,
+      weapon: p.weapon,
+      aimPitch: p.aimPitch,
+      speaking: p.speaking,
     };
   }
 
+  app.get('/api/rooms', (req, res) => {
+    const cityFilter = typeof req.query.cityId === 'string' ? req.query.cityId : '';
+    const list = [...rooms.values()]
+      .filter((r) => !r.isPrivate && (!cityFilter || r.cityId === cityFilter))
+      .map((r) => ({
+        code: r.code,
+        cityId: r.cityId,
+        name: r.name,
+        isPrivate: r.isPrivate,
+        hostName: r.hostName,
+        playerCount: r.peers.size,
+      }));
+    res.json({ ok: true, rooms: list });
+  });
+
+  app.post('/api/rooms', (req, res) => {
+    const cityId = String(req.body?.cityId || 'pookkottumpadam');
+    const isPrivate = Boolean(req.body?.isPrivate);
+    const hostName = String(req.body?.hostName || 'Player').slice(0, 28);
+    const name = String(req.body?.name || `${hostName}'s Session`).slice(0, 40);
+    let code = makeRoomCode();
+    while (rooms.has(code)) code = makeRoomCode();
+    const room = getOrCreateRoom(code, cityId, name, isPrivate, hostName);
+    res.json({
+      ok: true,
+      room: {
+        code: room.code,
+        cityId: room.cityId,
+        name: room.name,
+        isPrivate: room.isPrivate,
+        hostName: room.hostName,
+        playerCount: room.peers.size,
+      },
+    });
+  });
+
+  app.get('/api/rooms/:code', (req, res) => {
+    const code = String(req.params.code || '').toUpperCase();
+    const room = rooms.get(code);
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+    res.json({
+      ok: true,
+      room: {
+        code: room.code,
+        cityId: room.cityId,
+        name: room.name,
+        isPrivate: room.isPrivate,
+        hostName: room.hostName,
+        playerCount: room.peers.size,
+      },
+    });
+  });
+
   app.get('/api/cities/:cityId/players', (req, res) => {
-    const room = rooms.get(req.params.cityId);
-    const players = room ? [...room.values()].map(serializePeer) : [];
+    const cityId = req.params.cityId;
+    const players: ReturnType<typeof serializePeer>[] = [];
+    for (const r of rooms.values()) {
+      if (r.cityId === cityId) {
+        for (const p of r.peers.values()) players.push(serializePeer(p));
+      }
+    }
     res.json({ ok: true, count: players.length, players });
   });
 
@@ -454,16 +569,20 @@ async function startServer() {
       try {
         const msg = JSON.parse(raw.toString());
         if (msg.type === 'join') {
-          const cityId = String(msg.cityId || 'kochi');
+          const cityId = String(msg.cityId || 'pookkottumpadam');
+          const roomCode = String(msg.roomCode || `PUB-${cityId.slice(0, 4).toUpperCase()}`).toUpperCase();
           const id = `${msg.uid || 'guest'}_${Math.random().toString(36).slice(2, 7)}`;
+
           if (currentPeer) {
-            const oldRoom = rooms.get(currentPeer.cityId);
-            oldRoom?.delete(currentPeer.id);
-            broadcast(currentPeer.cityId, currentPeer.id, { type: 'peer_leave', id: currentPeer.id });
+            const oldRoom = rooms.get(currentPeer.roomCode);
+            oldRoom?.peers.delete(currentPeer.id);
+            broadcast(currentPeer.roomCode, currentPeer.id, { type: 'peer_leave', id: currentPeer.id });
           }
+
           currentPeer = {
             id,
             uid: String(msg.uid || 'guest'),
+            roomCode,
             cityId,
             name: String(msg.name || 'Player').slice(0, 28),
             appearance: msg.appearance || DEFAULT_APPEARANCE,
@@ -475,13 +594,25 @@ async function startServer() {
             vehicleType: msg.vehicleType || null,
             vehicleColor: typeof msg.vehicleColor === 'number' ? msg.vehicleColor : null,
             onFoot: !msg.vehicleType,
+            weapon: String(msg.weapon || 'unarmed'),
+            aimPitch: Number(msg.aimPitch) || 0,
+            speaking: Boolean(msg.speaking),
             ws,
           };
-          const room = getRoom(cityId);
-          const snapshot = [...room.values()].map(serializePeer);
-          room.set(id, currentPeer);
-          ws.send(JSON.stringify({ type: 'room_snapshot', selfId: id, peers: snapshot }));
-          broadcast(cityId, id, { type: 'peer_join', peer: serializePeer(currentPeer) });
+
+          const room = getOrCreateRoom(roomCode, cityId, msg.roomName, Boolean(msg.isPrivate), currentPeer.name);
+          const snapshot = [...room.peers.values()].map(serializePeer);
+          room.peers.set(id, currentPeer);
+
+          ws.send(JSON.stringify({
+            type: 'room_snapshot',
+            selfId: id,
+            roomCode: room.code,
+            roomName: room.name,
+            isPrivate: room.isPrivate,
+            peers: snapshot,
+          }));
+          broadcast(room.code, id, { type: 'peer_join', peer: serializePeer(currentPeer) });
         } else if (msg.type === 'state' && currentPeer) {
           currentPeer.x = Number(msg.x) || 0;
           currentPeer.y = Number(msg.y) || 0;
@@ -491,7 +622,10 @@ async function startServer() {
           currentPeer.vehicleType = msg.vehicleType || null;
           currentPeer.vehicleColor = typeof msg.vehicleColor === 'number' ? msg.vehicleColor : null;
           currentPeer.onFoot = Boolean(msg.onFoot);
-          broadcast(currentPeer.cityId, currentPeer.id, {
+          currentPeer.weapon = String(msg.weapon || 'unarmed');
+          currentPeer.aimPitch = Number(msg.aimPitch) || 0;
+          currentPeer.speaking = Boolean(msg.speaking);
+          broadcast(currentPeer.roomCode, currentPeer.id, {
             type: 'peer_state',
             id: currentPeer.id,
             x: currentPeer.x,
@@ -502,16 +636,37 @@ async function startServer() {
             vehicleType: currentPeer.vehicleType,
             vehicleColor: currentPeer.vehicleColor,
             onFoot: currentPeer.onFoot,
+            weapon: currentPeer.weapon,
+            aimPitch: currentPeer.aimPitch,
+            speaking: currentPeer.speaking,
+          });
+        } else if (msg.type === 'shoot' && currentPeer) {
+          broadcast(currentPeer.roomCode, currentPeer.id, {
+            type: 'peer_shoot',
+            id: currentPeer.id,
+            weapon: String(msg.weapon || 'pistol'),
+            origin: msg.origin,
+            dir: msg.dir,
           });
         } else if (msg.type === 'chat' && currentPeer) {
           const text = String(msg.text || '').trim().slice(0, 140);
           if (!text) return;
-          broadcast(currentPeer.cityId, null, {
+          broadcast(currentPeer.roomCode, null, {
             type: 'peer_chat',
             id: currentPeer.id,
             name: currentPeer.name,
             text,
             ts: Date.now(),
+          });
+        } else if (
+          (msg.type === 'rtc_offer' || msg.type === 'rtc_answer' || msg.type === 'rtc_ice') &&
+          currentPeer &&
+          typeof msg.targetId === 'string'
+        ) {
+          sendToPeer(currentPeer.roomCode, msg.targetId, {
+            type: msg.type,
+            fromId: currentPeer.id,
+            payload: msg.payload,
           });
         }
       } catch {
@@ -521,13 +676,18 @@ async function startServer() {
 
     ws.on('close', () => {
       if (!currentPeer) return;
-      const room = rooms.get(currentPeer.cityId);
-      room?.delete(currentPeer.id);
-      broadcast(currentPeer.cityId, currentPeer.id, { type: 'peer_leave', id: currentPeer.id });
+      const room = rooms.get(currentPeer.roomCode);
+      if (room) {
+        room.peers.delete(currentPeer.id);
+        broadcast(currentPeer.roomCode, currentPeer.id, { type: 'peer_leave', id: currentPeer.id });
+        // Clean up empty custom rooms after leave
+        if (!room.code.startsWith('PUB-') && room.peers.size === 0) {
+          rooms.delete(room.code);
+        }
+      }
     });
   });
 
-  // Frontend Vite middleware in development, static dist/ in production
   if (!IS_PROD) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({

@@ -5,7 +5,6 @@ import { SURF } from '../world/SurfaceMap.js';
 import { SIGN_FONT } from '../core/Assets.js';
 
 const $ = (id) => document.getElementById(id);
-const MAP_SCALE = 0.5;
 
 export class HUD {
   constructor(game) {
@@ -49,7 +48,7 @@ export class HUD {
   }
 
   toMap(x, z) {
-    return [(x - this.mapMinX) * MAP_SCALE, (z - this.mapMinZ) * MAP_SCALE];
+    return [(x - this.mapMinX) * this.mapScale, (z - this.mapMinZ) * this.mapScale];
   }
 
   _collectPois() {
@@ -81,8 +80,11 @@ export class HUD {
     const s = world.surface;
     this.mapMinX = s.minX;
     this.mapMinZ = s.minZ;
-    const w = Math.ceil(s.w * MAP_SCALE);
-    const h = Math.ceil(s.h * MAP_SCALE);
+    const spanX = s.w * (s.cell || 1);
+    const spanZ = s.h * (s.cell || 1);
+    this.mapScale = Math.min(0.5, 1400 / Math.max(spanX, spanZ));
+    const w = Math.max(320, Math.ceil(spanX * this.mapScale));
+    const h = Math.max(320, Math.ceil(spanZ * this.mapScale));
     const c = document.createElement('canvas');
     c.width = w;
     c.height = h;
@@ -102,8 +104,8 @@ export class HUD {
     const water = [36, 78, 98];
     for (let j = 0; j < h; j++) {
       for (let i = 0; i < w; i++) {
-        const x = s.minX + (i + 0.5) / MAP_SCALE;
-        const z = s.minZ + (j + 0.5) / MAP_SCALE;
+        const x = s.minX + (i + 0.5) / this.mapScale;
+        const z = s.minZ + (j + 0.5) / this.mapScale;
         const t = s.typeAt(x, z);
         let col = colours[t] || colours[SURF.LAND];
         if ((t === SURF.LAND || t === SURF.VERGE || t === SURF.RESERVED) && world.terrain.waterDistance(x, z) < 0) col = water;
@@ -343,6 +345,11 @@ export class HUD {
     }
     if (best) {
       this.game.fastTravel(best);
+      this.toggleMap(false);
+    } else {
+      const worldX = this.mapMinX + x / this.mapScale;
+      const worldZ = this.mapMinZ + y / this.mapScale;
+      this.game.fastTravel({ label: 'Selected Coordinate', worldX, worldZ });
       this.toggleMap(false);
     }
   }

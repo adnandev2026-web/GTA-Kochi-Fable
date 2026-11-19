@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { SURF } from './SurfaceMap.js';
-import { PLACE_NAMES, FLYOVER_DECK_HALF } from './layout.js';
+import { CITY_POIS, PLACE_NAMES, FLYOVER_DECK_HALF } from './layout.js';
 import { STOP_LINE_SETBACK } from './RoadNetwork.js';
 import { lerp } from '../utils/math.js';
 
@@ -119,14 +119,15 @@ export class Props {
   }
 
   _signals() {
+    const ts = CITY_POIS.trafficSide === 'right' ? -1 : 1;
     for (const node of this.roads.junctions) {
       if (!node.signal || node.arms.length < 3) continue;
       for (const arm of node.arms) {
         const f = this.roads.armFrame(arm, arm.trim + STOP_LINE_SETBACK - 0.6);
-        // Approaching traffic uses the arm's right-hand half (looking away from the node).
         const kerb = arm.half + 0.7;
-        const px = f.x + f.rx * kerb;
-        const pz = f.z + f.rz * kerb;
+        const sideKerb = kerb * ts;
+        const px = f.x + f.rx * sideKerb;
+        const pz = f.z + f.rz * sideKerb;
         const b = this.b('steel', px, pz, [0.2, 0.21, 0.22]);
         b.cylinder(px, 0.19, pz, 0.12, 0.1, 6.4, 7, { cap: true });
         this.colliders.addCircle(px, pz, 0.2, -1, 6.5, 'signal');
@@ -137,8 +138,8 @@ export class Props {
         if (reach > 3.5) {
           const rot = Math.atan2(f.rz, f.rx);
           b.tint = [0.2, 0.21, 0.22];
-          b.box(px - (f.rx * reach) / 2, 6.35, pz - (f.rz * reach) / 2, reach, 0.14, 0.14, rot, { faces: 'xXzZYy' });
-          this._head(px - f.rx * (reach - 0.3), 5.0, pz - f.rz * (reach - 0.3), f.tx, f.tz, node, arm.index);
+          b.box(px - (f.rx * ts * reach) / 2, 6.35, pz - (f.rz * ts * reach) / 2, reach, 0.14, 0.14, rot, { faces: 'xXzZYy' });
+          this._head(px - f.rx * ts * (reach - 0.3), 5.0, pz - f.rz * ts * (reach - 0.3), f.tx, f.tz, node, arm.index);
         }
       }
     }
@@ -209,13 +210,14 @@ export class Props {
   }
 
   _placeBoards() {
+    const ts = CITY_POIS.trafficSide === 'right' ? -1 : 1;
     for (const node of this.roads.junctions) {
       if (!PLACE_NAMES[node.id]) continue;
       for (const arm of node.arms) {
         const d = arm.trim + 34;
         if (arm.edge.length < d + 20) continue;
         const f = this.roads.armFrame(arm, d);
-        const lat = arm.half + arm.walk + 1.4;
+        const lat = (arm.half + arm.walk + 1.4) * ts;
         const x = f.x + f.rx * lat;
         const z = f.z + f.rz * lat;
         const t = this.surface.typeAt(x, z);
@@ -229,19 +231,19 @@ export class Props {
       for (const s of [e.length * 0.3, e.length * 0.7]) {
         const f = e.at(s);
         const side = s < e.length / 2 ? 1 : -1;
-        const lat = side * (e.half + e.walk + 0.9);
+        const lat = side * ts * (e.half + e.walk + 0.9);
         const x = f.x + f.nx * lat;
         const z = f.z + f.nz * lat;
         if (this.surface.typeAt(x, z) === SURF.BUILDING) continue;
         const b = this.b('steel', x, z, STEEL);
         b.cylinder(x, 0, z, 0.05, 0.05, 3.2, 6);
-        // Left-hand traffic: a sign on the +n side faces traffic running along +t.
         this.marks.signAt('speed', x, 2.35, z, -f.tx * side, -f.tz * side, 0.9, false, { cx: x, cz: z });
       }
     }
   }
 
   _gantries() {
+    const ts = CITY_POIS.trafficSide === 'right' ? -1 : 1;
     const plan = { V: ['dir_V_n', 'dir_V_s'], K: ['dir_K_n', 'dir_K_s'], PB: ['dir_PB_n', 'dir_PB_s'], E: ['dir_E_n', 'dir_E_s'] };
     for (const fl of this.roads.flyovers) {
       const ids = plan[fl.nodeId];
@@ -251,9 +253,8 @@ export class Props {
         if (e.length < d + 30) return;
         const s = end === 0 ? d : e.length - d;
         const f = e.at(s);
-        // Carriageway heading for the node: traffic keeps left of its direction of travel.
         const toward = end === 0 ? -1 : 1; // along-edge direction that approaches the node
-        const side = toward; // left of travel = +n when travelling along +t
+        const side = toward * ts; // kerb side of oncoming carriageway
         const inner = 0.35; // stands on the median
         const outer = e.half + 1.0;
         const ax = f.x + f.nx * side * inner;

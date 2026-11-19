@@ -2,10 +2,8 @@
 // soil; the backwaters are a cheap animated PBR surface that reflects the sky.
 
 import * as THREE from 'three';
-import { WORLD } from './layout.js';
+import { CITY_POIS, WORLD } from './layout.js';
 import { fbm } from '../utils/rng.js';
-
-const CELL = 8;
 
 export class Land {
   constructor(scene, assets, terrain) {
@@ -25,16 +23,17 @@ export class Land {
     const maxX = WORLD.maxX + pad;
     const minZ = WORLD.minZ - pad;
     const maxZ = WORLD.maxZ + pad;
-    const nx = Math.ceil((maxX - minX) / CELL);
-    const nz = Math.ceil((maxZ - minZ) / CELL);
+    const cell = Math.max(8, Math.ceil(Math.max(maxX - minX, maxZ - minZ) / 600));
+    const nx = Math.ceil((maxX - minX) / cell);
+    const nz = Math.ceil((maxZ - minZ) / cell);
     const pos = new Float32Array((nx + 1) * (nz + 1) * 3);
     const uv = new Float32Array((nx + 1) * (nz + 1) * 2);
     const blend = new Float32Array((nx + 1) * (nz + 1) * 2);
     let k = 0;
     for (let j = 0; j <= nz; j++) {
       for (let i = 0; i <= nx; i++) {
-        const x = minX + i * CELL;
-        const z = minZ + j * CELL;
+        const x = minX + i * cell;
+        const z = minZ + j * cell;
         const h = t.height(x, z);
         pos[k * 3] = x;
         pos[k * 3 + 1] = h - 0.02;
@@ -99,11 +98,12 @@ export class Land {
     const grass = assets.textures.grass;
     const soil = assets.textures.laterite;
     const mud = assets.textures.mud;
+    const grassColor = CITY_POIS.theme?.groundTint ?? 0xa9c486;
     const mat = new THREE.MeshStandardMaterial({
       map: grass.map,
       normalMap: grass.normalMap,
       roughness: 0.96,
-      color: 0xa9c486,
+      color: grassColor,
     });
     mat.normalScale.set(0.8, 0.8);
     mat.onBeforeCompile = (shader) => {
@@ -141,7 +141,7 @@ export class Land {
     }
 
     // Flat apron out to the horizon (a frame around the detailed terrain), lost in the haze.
-    const farMat = new THREE.MeshStandardMaterial({ color: 0x5f6f45, roughness: 1 });
+    const farMat = new THREE.MeshStandardMaterial({ color: CITY_POIS.theme?.farTint ?? 0x5f6f45, roughness: 1 });
     const R = 9000;
     const frame = [
       [minX - R, minZ - R, maxX + R, minZ],
@@ -166,7 +166,7 @@ export class Land {
     this.waterNormal = n;
     n.repeat.set(1, 1);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x2f4a3c,
+      color: CITY_POIS.theme?.waterTint ?? 0x2f4a3c,
       roughness: 0.12,
       metalness: 0.0,
       normalMap: n,

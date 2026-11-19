@@ -3,6 +3,7 @@
 
 import { KOCHI_EXTRA_POIS, EXTRA_CITY_LAYOUTS } from './cities.js';
 import { CITIES_CATALOG } from '../shared/catalog.ts';
+import { getCityConfig, parseCustomHomeId } from '../config/cityConfigs.ts';
 
 export const P = (east, north) => [east, -north];
 export const EXIT_BUFFER = 285;
@@ -255,7 +256,41 @@ function replaceArray(target, next) {
   for (const item of next) target.push(item);
 }
 
+function resolveHomeChoice(cityId, homeId, baseHomes, fallbackSpawn) {
+  const cfg = getCityConfig(cityId);
+  const custom = parseCustomHomeId(homeId, cityId);
+  const homes = [...(baseHomes || [])];
+  if (custom) {
+    const customHome = {
+      id: homeId,
+      name: `${cfg.name} Custom Home`,
+      district: `${custom.lat.toFixed(4)}, ${custom.lon.toFixed(4)}`,
+      x: custom.x,
+      z: custom.z,
+      heading: 0,
+      isCustom: true,
+    };
+    const filtered = homes.filter((h) => h.id !== homeId);
+    filtered.unshift(customHome);
+    return {
+      homes: filtered,
+      selectedHome: customHome,
+      spawn: { p: [custom.x, custom.z], heading: 0 },
+    };
+  }
+  const chosenHome = homes.find((h) => h.id === homeId) || homes[0];
+  return {
+    homes,
+    selectedHome: chosenHome || null,
+    spawn: {
+      p: chosenHome ? [chosenHome.x, chosenHome.z] : fallbackSpawn.p,
+      heading: chosenHome?.heading ?? fallbackSpawn.heading ?? 0,
+    },
+  };
+}
+
 export function setActiveCityLayout(cityId = 'kochi', homeId = '') {
+  const cfg = getCityConfig(cityId);
   if (cityId === 'kochi' || !EXTRA_CITY_LAYOUTS[cityId]) {
     replaceObject(WORLD, KOCHI_PRESET.WORLD);
     replaceObject(CORE, KOCHI_PRESET.CORE);
@@ -265,11 +300,12 @@ export function setActiveCityLayout(cityId = 'kochi', homeId = '') {
     replaceObject(METRO, KOCHI_PRESET.METRO);
     replaceObject(WATER, KOCHI_PRESET.WATER);
     replaceObject(LANDMARKS, KOCHI_PRESET.LANDMARKS);
+    const resolved = resolveHomeChoice('kochi', homeId, kochiHomes, KOCHI_PRESET.SPAWN);
     const extraReserved = [
       ...KOCHI_EXTRA_POIS.schools.map((s) => ({ c: [s.x, s.z], hx: 30, hz: 24, rot: 0, tag: s.id })),
       ...KOCHI_EXTRA_POIS.petrolPumps.map((p) => ({ c: [p.x, p.z], hx: 20, hz: 16, rot: 0, tag: p.id })),
       ...KOCHI_EXTRA_POIS.policeStations.map((p) => ({ c: [p.x, p.z], hx: 24, hz: 20, rot: 0, tag: p.id })),
-      ...kochiHomes.slice(1).map((h) => ({ c: [h.x, h.z], hx: 18, hz: 18, rot: 0, tag: h.id })),
+      ...resolved.homes.map((h) => ({ c: [h.x, h.z], hx: 18, hz: 18, rot: 0, tag: h.id })),
     ];
     replaceArray(RESERVED, [...KOCHI_PRESET.RESERVED, ...extraReserved]);
     replaceArray(RESERVED_CIRCLES, KOCHI_PRESET.RESERVED_CIRCLES);
@@ -277,12 +313,15 @@ export function setActiveCityLayout(cityId = 'kochi', homeId = '') {
     replaceArray(ZONES, KOCHI_PRESET.ZONES);
     replaceObject(PLACE_NAMES, KOCHI_PRESET.PLACE_NAMES);
 
-    const chosenHome = kochiHomes.find((h) => h.id === homeId) || kochiHomes[0];
-    replaceObject(SPAWN, { p: chosenHome ? [chosenHome.x, chosenHome.z] : KOCHI_PRESET.SPAWN.p, heading: chosenHome?.heading ?? 0.22 });
+    replaceObject(SPAWN, resolved.spawn);
     replaceObject(CITY_POIS, {
       ...KOCHI_EXTRA_POIS,
-      homes: kochiHomes,
-      selectedHomeId: chosenHome?.id || 'kochi_kundannoor',
+      trafficSide: cfg.trafficSide,
+      language: cfg.language,
+      signTranslations: cfg.signTranslations,
+      osmBuildings: [],
+      homes: resolved.homes,
+      selectedHomeId: resolved.selectedHome?.id || 'kochi_kundannoor',
     });
     return CITY_POIS;
   }
@@ -296,20 +335,108 @@ export function setActiveCityLayout(cityId = 'kochi', homeId = '') {
   replaceObject(METRO, preset.METRO);
   replaceObject(WATER, preset.WATER);
   replaceObject(LANDMARKS, preset.LANDMARKS);
-  replaceArray(RESERVED, preset.RESERVED);
+  const resolved = resolveHomeChoice(cityId, homeId, preset.POIS.homes, preset.SPAWN);
+  const reservedWithHome = resolved.selectedHome?.isCustom
+    ? [...preset.RESERVED, { c: [resolved.selectedHome.x, resolved.selectedHome.z], hx: 18, hz: 18, rot: 0, tag: resolved.selectedHome.id }]
+    : preset.RESERVED;
+  replaceArray(RESERVED, reservedWithHome);
   replaceArray(RESERVED_CIRCLES, preset.RESERVED_CIRCLES);
   replaceArray(OPEN_AREAS, preset.OPEN_AREAS);
   replaceArray(ZONES, preset.ZONES);
   replaceObject(PLACE_NAMES, preset.PLACE_NAMES);
 
-  const chosenHome = preset.POIS.homes.find((h) => h.id === homeId) || preset.POIS.homes[0];
-  replaceObject(SPAWN, {
-    p: chosenHome ? [chosenHome.x, chosenHome.z] : preset.SPAWN.p,
-    heading: chosenHome?.heading ?? 0,
-  });
+  replaceObject(SPAWN, resolved.spawn);
   replaceObject(CITY_POIS, {
     ...preset.POIS,
-    selectedHomeId: chosenHome?.id || preset.POIS.homes[0]?.id || '',
+    trafficSide: cfg.trafficSide,
+    language: cfg.language,
+    signTranslations: cfg.signTranslations,
+    osmBuildings: [],
+    homes: resolved.homes,
+    selectedHomeId: resolved.selectedHome?.id || preset.POIS.homes[0]?.id || '',
   });
+  return CITY_POIS;
+}
+
+export function applyOsmLayout(cityId = 'kochi', homeId = '', osmData = null) {
+  setActiveCityLayout(cityId, homeId);
+  if (!osmData || !osmData.nodes || !Array.isArray(osmData.edges) || osmData.edges.length < 4 || cityId === 'kochi') {
+    return CITY_POIS;
+  }
+
+  const cfg = getCityConfig(cityId);
+  const validNodes = {};
+  for (const [id, n] of Object.entries(osmData.nodes)) {
+    if (n && Array.isArray(n.p) && Number.isFinite(n.p[0]) && Number.isFinite(n.p[1])) {
+      validNodes[id] = n;
+    }
+  }
+  const validEdges = osmData.edges.filter((e) => validNodes[e.a] && validNodes[e.b]);
+  if (validEdges.length < 4) return CITY_POIS;
+
+  const b = osmData.bounds || { minX: -940, maxX: 940, minZ: -940, maxZ: 940 };
+  const worldBounds = {
+    minX: Math.min(-960, Math.floor(b.minX)),
+    maxX: Math.max(960, Math.ceil(b.maxX)),
+    minZ: Math.min(-960, Math.floor(b.minZ)),
+    maxZ: Math.max(960, Math.ceil(b.maxZ)),
+  };
+  replaceObject(WORLD, worldBounds);
+  replaceObject(CORE, {
+    minX: worldBounds.minX + 120,
+    maxX: worldBounds.maxX - 120,
+    minZ: worldBounds.minZ + 120,
+    maxZ: worldBounds.maxZ - 120,
+  });
+  replaceObject(NODES, validNodes);
+  replaceArray(EDGES, validEdges);
+
+  if (Array.isArray(osmData.waterChannels) && osmData.waterChannels.length > 0) {
+    replaceObject(WATER, {
+      level: -0.9,
+      polygons: [],
+      channels: osmData.waterChannels,
+    });
+  }
+
+  const osmSchools = (osmData.pois || []).filter((p) => p.kind === 'school').map((p) => ({ id: p.id, name: p.name, x: p.x, z: p.z, rot: 0 }));
+  const osmFuels = (osmData.pois || []).filter((p) => p.kind === 'fuel').map((p) => ({ id: p.id, name: p.name, x: p.x, z: p.z, rot: 0 }));
+  const osmPolice = (osmData.pois || []).filter((p) => p.kind === 'police').map((p) => ({ id: p.id, name: p.name, x: p.x, z: p.z, rot: 0 }));
+
+  const schools = osmSchools.length ? osmSchools : CITY_POIS.schools;
+  const petrolPumps = osmFuels.length ? osmFuels : CITY_POIS.petrolPumps;
+  const policeStations = osmPolice.length ? osmPolice : CITY_POIS.policeStations;
+
+  // Map place names to major signal junctions from OSM
+  const placeNames = {};
+  const zones = [...ZONES];
+  let idx = 0;
+  for (const [id, node] of Object.entries(validNodes)) {
+    if (node.signal && idx < 10) {
+      const enName = String(node.name || `${cfg.name} Jn`).toUpperCase().slice(0, 22);
+      placeNames[id] = { en: enName, ml: cfg.localName, hi: cfg.country.toUpperCase() };
+      if (idx < zones.length) {
+        zones[idx] = { ...zones[idx], name: enName, p: [...node.p] };
+      }
+      idx++;
+    }
+  }
+  if (Object.keys(placeNames).length > 0) replaceObject(PLACE_NAMES, placeNames);
+  replaceArray(ZONES, zones);
+
+  const reservedNext = [
+    ...(CITY_POIS.signatureLandmarks || []).map((l) => ({ c: [l.x, l.z], hx: l.hx || 44, hz: l.hz || 44, rot: 0, tag: l.id })),
+    ...schools.map((s) => ({ c: [s.x, s.z], hx: 30, hz: 24, rot: 0, tag: s.id })),
+    ...petrolPumps.map((p) => ({ c: [p.x, p.z], hx: 20, hz: 16, rot: 0, tag: p.id })),
+    ...policeStations.map((p) => ({ c: [p.x, p.z], hx: 24, hz: 20, rot: 0, tag: p.id })),
+    ...(CITY_POIS.homes || []).map((h) => ({ c: [h.x, h.z], hx: 18, hz: 18, rot: 0, tag: h.id })),
+  ];
+  replaceArray(RESERVED, reservedNext);
+
+  CITY_POIS.schools = schools;
+  CITY_POIS.petrolPumps = petrolPumps;
+  CITY_POIS.policeStations = policeStations;
+  CITY_POIS.osmBuildings = Array.isArray(osmData.buildings) ? osmData.buildings : [];
+
   return CITY_POIS;
 }

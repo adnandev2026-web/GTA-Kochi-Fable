@@ -101,6 +101,38 @@ function carDetails(parts, shape, f, o, rects, plate) {
       for (const z of [-1.3, -0.6, 0.1]) parts.push(tube([s * 0.58, f.top(z) - 0.01, z], [s * 0.58, f.top(z) + 0.06, z], 0.016, 'steel', 5));
     }
   }
+  if (o.spoiler) {
+    const sy = hoodY > 0 ? f.top(zR + 0.15) : 0.96;
+    for (const s of [1, -1]) parts.push(box(0.05, 0.18, 0.14, 'black', xf(s * 0.54, sy + 0.08, zR + 0.16)));
+    parts.push(roundBox(1.52, 0.04, 0.24, 0.015, o.spoilerSurf || 'paint', xf(0, sy + 0.17, zR + 0.14, -0.1, 0, 0)));
+  }
+  if (o.taxiSign && rects.taxiSign) {
+    const ty = f.top(-0.15) + 0.09;
+    parts.push(roundBox(0.56, 0.16, 0.22, 0.03, o.taxiHousing || 'taxiSign', xf(0, ty, -0.15)));
+    parts.push(decal(0.48, 0.13, rects.taxiSign, xf(0, ty, -0.035)));
+    parts.push(decal(0.48, 0.13, rects.taxiSign, xf(0, ty, -0.265, 0, Math.PI, 0)));
+  }
+  if (o.rtaRoof) {
+    const ry = f.top(-0.2) + 0.01;
+    parts.push(roundBox(1.26, 0.04, 1.55, 0.015, 'rtaRed', xf(0, ry, -0.2)));
+  }
+  if (o.jpStripe) {
+    for (const s of [1, -1]) {
+      parts.push(box(0.016, 0.08, 3.3, 'yellow', xf(s * (f.width(0) * 0.99 + 0.008), f.belt(0) - 0.14, 0)));
+    }
+  }
+  if (o.racingStripes) {
+    for (const sx of [-0.16, 0.16]) {
+      parts.push(box(0.11, 0.02, 1.15, 'white', xf(sx, hoodY + 0.02, zF - 0.7)));
+    }
+    parts.push(roundBox(0.56, 0.08, 0.62, 0.02, 'black', xf(0, hoodY + 0.03, zF - 0.85)));
+  }
+  if (o.bullbar) {
+    parts.push(tube([-0.68, f.under(zF) + 0.26, zF + 0.06], [0.68, f.under(zF) + 0.26, zF + 0.06], 0.032, 'chrome', 6));
+    for (const s of [1, -1]) {
+      parts.push(tube([s * 0.5, f.under(zF) + 0.08, zF + 0.06], [s * 0.5, f.under(zF) + 0.42, zF + 0.06], 0.03, 'chrome', 6));
+    }
+  }
 }
 
 function carWheels(f, o) {
@@ -154,6 +186,159 @@ const SHAPES = {
     size: { length: 4.4, width: 1.82, height: 1.74 },
     seat: { x: -0.39, y: 0.72, z: 0.2 },
   },
+  kei_car: {
+    shape: {
+      top: [[-1.65, 1.04], [-1.52, 1.62], [-0.4, 1.66], [0.4, 1.64], [0.85, 1.02], [1.4, 0.95], [1.65, 0.88]],
+      belt: [[-1.65, 0.96], [-0.9, 1.0], [0.85, 0.95], [1.65, 0.84]],
+      width: [[-1.65, 0.71], [-1.0, 0.74], [0.8, 0.74], [1.65, 0.71]],
+      roofWidth: [[-1.65, 0.66], [-1.52, 0.66], [0.4, 0.64], [0.85, 0.68], [1.65, 0.66]],
+      under: [[-1.65, 0.28], [-1.0, 0.2], [1.0, 0.2], [1.65, 0.28]],
+      zones: { windshield: [0.42, 0.84], rear: [-1.58, -1.52], side: [-1.42, 0.64], pillars: [-0.45], pillarWidth: 0.08 },
+    },
+    o: { axles: [1.08, -1.08], wheelR: 0.26, wheelW: 0.17, handles: [0.1, -0.68], seams: [0.64, -0.45], tailY: 0.86, tailH: 0.34, tailW: 0.14, rearPlateY: 0.56, grilleW: 0.72 },
+    size: { length: 3.3, width: 1.48, height: 1.66 },
+    seat: { x: 0.3, y: 0.62, z: 0.12 },
+  },
+  jdm_sedan: {
+    shape: {
+      top: [[-2.25, 0.95], [-1.55, 0.99], [-1.35, 1.03], [-0.72, 1.38], [-0.15, 1.41], [0.42, 1.38], [1.2, 0.95], [1.75, 0.88], [2.1, 0.81], [2.25, 0.78]],
+      belt: [[-2.25, 0.89], [-1.35, 0.94], [1.2, 0.89], [2.25, 0.76]],
+      width: [[-2.25, 0.82], [-1.6, 0.87], [1.1, 0.87], [1.75, 0.85], [2.25, 0.81]],
+      roofWidth: [[-2.25, 0.72], [-1.35, 0.72], [-0.72, 0.62], [0.42, 0.61], [1.2, 0.73], [2.25, 0.7]],
+      under: [[-2.25, 0.26], [-1.7, 0.17], [1.1, 0.17], [1.75, 0.18], [2.25, 0.25]],
+      zones: { windshield: [0.44, 1.18], rear: [-1.33, -0.74], side: [-0.95, 0.92], pillars: [-0.04], pillarWidth: 0.09 },
+    },
+    o: { axles: [1.42, -1.3], wheelR: 0.31, wheelW: 0.22, handles: [0.3, -0.5], seams: [0.88, -0.04, -0.96], tailY: 0.86, tailH: 0.14, tailW: 0.32, rearPlateY: 0.64, grilleW: 0.9, spoiler: true },
+    size: { length: 4.5, width: 1.74, height: 1.44 },
+    seat: { x: 0.38, y: 0.48, z: 0.18 },
+  },
+  jp_taxi: {
+    shape: {
+      top: [[-2.25, 0.98], [-1.52, 1.04], [-1.3, 1.07], [-0.72, 1.49], [-0.15, 1.52], [0.4, 1.49], [1.18, 1.0], [1.75, 0.93], [2.25, 0.84]],
+      belt: [[-2.25, 0.93], [-1.3, 0.99], [1.18, 0.94], [2.25, 0.8]],
+      width: [[-2.25, 0.8], [-0.8, 0.85], [1.1, 0.85], [2.25, 0.8]],
+      roofWidth: [[-2.25, 0.72], [-1.3, 0.72], [-0.72, 0.63], [0.4, 0.62], [1.18, 0.74], [2.25, 0.7]],
+      under: [[-2.25, 0.29], [-1.6, 0.2], [1.1, 0.2], [2.25, 0.28]],
+      zones: { windshield: [0.42, 1.16], rear: [-1.28, -0.74], side: [-0.96, 0.9], pillars: [-0.04], pillarWidth: 0.1 },
+    },
+    o: { axles: [1.4, -1.28], wheelR: 0.295, wheelW: 0.205, handles: [0.3, -0.5], seams: [0.86, -0.04, -0.96], tailY: 0.9, tailH: 0.16, tailW: 0.28, rearPlateY: 0.68, taxiSign: true, jpStripe: true },
+    size: { length: 4.5, width: 1.7, height: 1.54 },
+    seat: { x: 0.37, y: 0.53, z: 0.2 },
+  },
+  commuter_van: {
+    shape: {
+      top: [[-2.35, 1.08], [-2.2, 1.94], [-0.5, 1.98], [1.35, 1.94], [1.98, 1.18], [2.25, 1.04], [2.35, 0.96]],
+      belt: [[-2.35, 1.06], [1.45, 1.08], [2.35, 0.92]],
+      width: [[-2.35, 0.86], [-1.5, 0.9], [1.6, 0.9], [2.35, 0.84]],
+      roofWidth: [[-2.35, 0.82], [-2.2, 0.82], [1.35, 0.8], [1.98, 0.82], [2.35, 0.76]],
+      under: [[-2.35, 0.34], [-1.7, 0.26], [1.6, 0.26], [2.35, 0.34]],
+      zones: { windshield: [1.38, 1.95], rear: [-2.28, -2.18], side: [-2.05, 1.25], pillars: [-0.95, 0.2], pillarWidth: 0.1 },
+    },
+    o: { axles: [1.55, -1.45], wheelR: 0.33, wheelW: 0.22, handles: [0.7, -0.35], seams: [1.15, 0.2, -0.95], tailY: 0.98, tailH: 0.42, tailW: 0.14, rearPlateY: 0.68, grilleW: 0.95 },
+    size: { length: 4.7, width: 1.8, height: 1.98 },
+    seat: { x: -0.42, y: 0.85, z: 1.05 },
+  },
+  black_cab: {
+    shape: {
+      top: [[-2.2, 1.04], [-1.9, 1.14], [-1.62, 1.72], [-0.45, 1.76], [0.42, 1.74], [1.05, 1.16], [1.72, 1.06], [2.1, 0.98], [2.2, 0.94]],
+      belt: [[-2.2, 0.98], [-1.5, 1.04], [1.05, 1.04], [2.2, 0.9]],
+      width: [[-2.2, 0.82], [-1.4, 0.87], [1.1, 0.87], [2.2, 0.81]],
+      roofWidth: [[-2.2, 0.72], [-1.62, 0.7], [0.42, 0.68], [1.05, 0.74], [2.2, 0.7]],
+      under: [[-2.2, 0.34], [-1.6, 0.23], [1.2, 0.23], [2.2, 0.32]],
+      zones: { windshield: [0.44, 1.03], rear: [-1.88, -1.64], side: [-1.5, 0.85], pillars: [-0.45], pillarWidth: 0.1 },
+      crown: 0.04,
+      lowerSurface: 'black',
+      capSurface: 'black',
+    },
+    o: { axles: [1.42, -1.32], wheelR: 0.32, wheelW: 0.21, handles: [0.22, -0.58], seams: [0.85, -0.45], tailY: 0.96, tailH: 0.3, tailW: 0.16, rearPlateY: 0.74, grilleW: 0.72, grilleH: 0.24, taxiSign: true },
+    size: { length: 4.4, width: 1.74, height: 1.78 },
+    seat: { x: 0.36, y: 0.68, z: 0.22 },
+  },
+  eu_hatchback: {
+    shape: {
+      top: [[-1.98, 0.95], [-1.84, 0.98], [-1.74, 1.04], [-1.25, 1.45], [-0.5, 1.48], [0.22, 1.45], [1.02, 0.98], [1.55, 0.9], [1.84, 0.84], [1.98, 0.82]],
+      belt: [[-1.98, 0.9], [-1.2, 0.96], [1.02, 0.91], [1.98, 0.78]],
+      width: [[-1.98, 0.82], [-1.4, 0.87], [1.0, 0.87], [1.98, 0.81]],
+      roofWidth: [[-1.98, 0.72], [-1.74, 0.72], [-1.25, 0.63], [0.22, 0.61], [1.02, 0.73], [1.98, 0.7]],
+      under: [[-1.98, 0.27], [-1.4, 0.18], [1.0, 0.18], [1.98, 0.26]],
+      zones: { windshield: [0.24, 1.0], rear: [-1.72, -1.27], side: [-1.2, 0.75], pillars: [-0.32], pillarWidth: 0.1 },
+    },
+    o: { axles: [1.28, -1.26], wheelR: 0.3, wheelW: 0.215, handles: [0.05, -0.72], seams: [0.68, -0.32, -1.08], tailY: 0.88, tailH: 0.2, tailW: 0.22, rearPlateY: 0.7, grilleW: 0.86, spoiler: true },
+    size: { length: 3.96, width: 1.74, height: 1.48 },
+    seat: { x: 0.36, y: 0.52, z: 0.08 },
+  },
+  nyc_taxi: {
+    shape: {
+      top: [[-2.35, 0.98], [-1.58, 1.03], [-1.36, 1.06], [-0.74, 1.47], [-0.15, 1.5], [0.42, 1.47], [1.24, 1.0], [1.85, 0.92], [2.35, 0.84]],
+      belt: [[-2.35, 0.93], [-1.36, 0.98], [1.24, 0.93], [2.35, 0.8]],
+      width: [[-2.35, 0.84], [-1.2, 0.89], [1.2, 0.89], [2.35, 0.83]],
+      roofWidth: [[-2.35, 0.74], [-1.36, 0.74], [-0.74, 0.64], [0.42, 0.63], [1.24, 0.75], [2.35, 0.72]],
+      under: [[-2.35, 0.29], [-1.7, 0.2], [1.2, 0.2], [2.35, 0.28]],
+      zones: { windshield: [0.44, 1.22], rear: [-1.34, -0.76], side: [-1.02, 0.94], pillars: [-0.04], pillarWidth: 0.1 },
+      lowerSurface: 'taxiYellow',
+      roofSurface: 'taxiYellow',
+      capSurface: 'taxiYellow',
+    },
+    o: { axles: [1.46, -1.34], wheelR: 0.31, wheelW: 0.215, handles: [0.32, -0.52], seams: [0.9, -0.04, -1.0], tailY: 0.9, tailH: 0.16, tailW: 0.32, rearPlateY: 0.68, grilleW: 0.92, taxiSign: true },
+    size: { length: 4.7, width: 1.78, height: 1.52 },
+    seat: { x: -0.38, y: 0.54, z: 0.22 },
+  },
+  muscle_car: {
+    shape: {
+      top: [[-2.3, 0.96], [-1.62, 1.01], [-1.42, 1.05], [-0.82, 1.35], [-0.15, 1.38], [0.32, 1.35], [1.08, 0.96], [1.85, 0.9], [2.3, 0.8]],
+      belt: [[-2.3, 0.92], [-1.4, 0.96], [1.08, 0.91], [2.3, 0.78]],
+      width: [[-2.3, 0.87], [-1.4, 0.94], [1.1, 0.92], [1.85, 0.91], [2.3, 0.85]],
+      roofWidth: [[-2.3, 0.76], [-1.42, 0.75], [-0.82, 0.65], [0.32, 0.64], [1.08, 0.76], [2.3, 0.72]],
+      under: [[-2.3, 0.26], [-1.6, 0.17], [1.2, 0.17], [2.3, 0.25]],
+      zones: { windshield: [0.34, 1.06], rear: [-1.4, -0.84], side: [-0.92, 0.78], pillars: [-0.24], pillarWidth: 0.1 },
+    },
+    o: { axles: [1.42, -1.36], wheelR: 0.325, wheelW: 0.25, handles: [0.18], seams: [0.78, -0.8], tailY: 0.86, tailH: 0.14, tailW: 0.34, rearPlateY: 0.64, grilleW: 1.02, spoiler: true, spoilerSurf: 'black', racingStripes: true },
+    size: { length: 4.6, width: 1.88, height: 1.38 },
+    seat: { x: -0.39, y: 0.45, z: 0.08 },
+  },
+  supercar: {
+    shape: {
+      top: [[-2.25, 0.86], [-1.75, 0.92], [-1.35, 0.96], [-0.65, 1.15], [0.1, 1.16], [0.95, 0.86], [1.75, 0.72], [2.25, 0.56]],
+      belt: [[-2.25, 0.82], [-1.35, 0.87], [0.95, 0.82], [2.25, 0.54]],
+      width: [[-2.25, 0.9], [-1.4, 0.98], [0.95, 0.96], [1.85, 0.93], [2.25, 0.84]],
+      roofWidth: [[-2.25, 0.78], [-1.35, 0.76], [-0.65, 0.66], [0.1, 0.65], [0.95, 0.76], [2.25, 0.7]],
+      under: [[-2.25, 0.22], [-1.4, 0.13], [1.2, 0.13], [2.25, 0.2]],
+      zones: { windshield: [0.12, 0.93], rear: [-1.33, -0.67], side: [-0.6, 0.66], pillars: [-0.15], pillarWidth: 0.08 },
+    },
+    o: { axles: [1.38, -1.32], wheelR: 0.33, wheelW: 0.26, handles: [0.14], seams: [0.68, -0.68], tailY: 0.78, tailH: 0.11, tailW: 0.36, rearPlateY: 0.54, grilleW: 1.1, grilleH: 0.14, headH: 0.08, spoiler: true, spoilerSurf: 'black' },
+    size: { length: 4.5, width: 1.96, height: 1.16 },
+    seat: { x: -0.38, y: 0.36, z: 0.02 },
+  },
+  rta_taxi: {
+    shape: {
+      top: [[-2.25, 0.98], [-1.52, 1.04], [-1.32, 1.07], [-0.72, 1.47], [-0.18, 1.5], [0.38, 1.47], [1.2, 1.0], [1.75, 0.92], [2.25, 0.84]],
+      belt: [[-2.25, 0.93], [-1.32, 0.99], [1.2, 0.94], [2.25, 0.8]],
+      width: [[-2.25, 0.82], [-1.2, 0.87], [1.1, 0.87], [2.25, 0.81]],
+      roofWidth: [[-2.25, 0.72], [-1.32, 0.72], [-0.72, 0.63], [0.38, 0.62], [1.2, 0.74], [2.25, 0.7]],
+      under: [[-2.25, 0.29], [-1.6, 0.2], [1.1, 0.2], [2.25, 0.28]],
+      zones: { windshield: [0.4, 1.18], rear: [-1.3, -0.74], side: [-0.98, 0.9], pillars: [-0.04], pillarWidth: 0.1 },
+      lowerSurface: 'dubaiCream',
+      roofSurface: 'rtaRed',
+      capSurface: 'dubaiCream',
+    },
+    o: { axles: [1.42, -1.3], wheelR: 0.3, wheelW: 0.21, handles: [0.3, -0.5], seams: [0.88, -0.04, -0.98], tailY: 0.9, tailH: 0.15, tailW: 0.3, rearPlateY: 0.68, grilleW: 0.9, taxiSign: true, rtaRoof: true },
+    size: { length: 4.5, width: 1.74, height: 1.52 },
+    seat: { x: -0.38, y: 0.53, z: 0.2 },
+  },
+  desert_4x4: {
+    shape: {
+      top: [[-2.4, 1.24], [-2.22, 1.3], [-1.85, 1.84], [-0.5, 1.88], [0.48, 1.84], [1.18, 1.28], [1.85, 1.2], [2.25, 1.14], [2.4, 1.1]],
+      belt: [[-2.4, 1.18], [-1.8, 1.22], [1.18, 1.2], [2.4, 1.06]],
+      width: [[-2.4, 0.91], [-1.5, 0.96], [1.2, 0.96], [2.4, 0.9]],
+      roofWidth: [[-2.4, 0.84], [-2.22, 0.84], [-1.85, 0.75], [0.48, 0.73], [1.18, 0.84], [2.4, 0.78]],
+      under: [[-2.4, 0.48], [-1.7, 0.35], [1.3, 0.35], [2.4, 0.48]],
+      zones: { windshield: [0.5, 1.16], rear: [-2.2, -1.87], side: [-1.76, 0.9], pillars: [-0.15, -1.1], pillarWidth: 0.11 },
+      crown: 0.02,
+    },
+    o: { axles: [1.46, -1.42], wheelR: 0.4, wheelW: 0.26, handles: [0.3, -0.65], seams: [0.85, -0.15, -1.12], tailY: 1.22, tailH: 0.34, tailW: 0.16, rearPlateY: 1.02, grilleW: 1.08, grilleH: 0.24, headH: 0.16, roofRails: true, bullbar: true },
+    size: { length: 4.8, width: 1.92, height: 1.9 },
+    seat: { x: -0.42, y: 0.84, z: 0.24 },
+  },
 };
 
 function buildCar(kind, rects, plateIndex) {
@@ -163,6 +348,105 @@ function buildCar(kind, rects, plateIndex) {
   const parts = [body];
   carDetails(parts, def.shape, f, def.o, rects, rects.plates[plateIndex % rects.plates.length]);
   return { geometry: merge(parts), wheels: carWheels(f, def.o), size: def.size, seat: def.seat };
+}
+
+// ------------------------------------------------------------------------ Kerala 4x4 Jeep
+function buildJeep(rects, plateIndex) {
+  const parts = [];
+  const zF = 1.95;
+  const zR = -1.95;
+  // Lower boxy body & flared fenders
+  parts.push(roundBox(1.56, 0.62, 3.7, 0.06, 'paint', xf(0, 0.78, 0)));
+  parts.push(roundBox(1.42, 0.38, 1.25, 0.05, 'paint', xf(0, 1.12, 1.1)));
+  // Upright grille + iconic round headlamps
+  parts.push(roundBox(1.38, 0.46, 0.1, 0.03, 'black', xf(0, 0.98, 1.84)));
+  for (const s of [1, -1]) {
+    parts.push(cyl(0.11, 0.11, 0.05, 12, 'head', xf(s * 0.48, 0.98, 1.89, HALF_PI, 0, 0)));
+    parts.push(box(0.16, 0.22, 0.05, 'tail', xf(s * 0.64, 0.86, zR + 0.08)));
+    parts.push(roundBox(0.22, 0.08, 2.8, 0.02, 'black', xf(s * 0.82, 0.72, 0)));
+  }
+  // Windshield & canvas soft-top / rollbar
+  parts.push(roundBox(1.38, 0.56, 0.08, 0.02, 'glass', xf(0, 1.48, 0.44, -0.22, 0, 0)));
+  parts.push(roundBox(1.44, 0.09, 2.25, 0.03, 'black', xf(0, 1.78, -0.72)));
+  for (const s of [1, -1]) {
+    for (const z of [0.35, -0.7, -1.72]) parts.push(tube([s * 0.68, 1.1, z], [s * 0.66, 1.76, z], 0.032, 'black', 6));
+  }
+  // Rear mounted spare tyre
+  parts.push(cyl(0.36, 0.36, 0.24, 14, 'rubber', xf(0, 1.0, zR - 0.02, HALF_PI, 0, 0)));
+  // Bumpers & plates
+  parts.push(roundBox(1.72, 0.18, 0.22, 0.04, 'black', xf(0, 0.5, zF - 0.04)));
+  parts.push(roundBox(1.72, 0.18, 0.22, 0.04, 'black', xf(0, 0.5, zR + 0.04)));
+  const plate = rects.plates[plateIndex % rects.plates.length];
+  parts.push(decal(0.46, 0.115, plate, xf(0, 0.52, zF + 0.08)));
+  parts.push(decal(0.46, 0.115, plate, xf(-0.48, 0.62, zR - 0.06, 0, Math.PI, 0)));
+  const wheels = [
+    { x: 0.78, y: 0.39, z: 1.26, r: 0.39, w: 0.25, side: 1, steer: true },
+    { x: -0.78, y: 0.39, z: 1.26, r: 0.39, w: 0.25, side: -1, steer: true },
+    { x: 0.78, y: 0.39, z: -1.24, r: 0.39, w: 0.25, side: 1, steer: false },
+    { x: -0.78, y: 0.39, z: -1.24, r: 0.39, w: 0.25, side: -1, steer: false },
+  ];
+  return { geometry: merge(parts), wheels, size: { length: 3.9, width: 1.76, height: 1.82 }, seat: { x: -0.35, y: 0.82, z: -0.05 } };
+}
+
+// ------------------------------------------------------------------------ Delivery Box Truck
+function buildDeliveryTruck(rects, plateIndex) {
+  const parts = [];
+  // Cab
+  parts.push(roundBox(1.96, 1.55, 1.65, 0.08, 'paint', xf(0, 1.38, 1.85)));
+  parts.push(roundBox(1.78, 0.66, 0.08, 0.03, 'glass', xf(0, 1.62, 2.66, -0.1, 0, 0)));
+  parts.push(roundBox(1.2, 0.22, 0.08, 0.02, 'black', xf(0, 0.96, 2.66)));
+  // Tall refrigerated cargo box
+  parts.push(roundBox(2.14, 2.15, 3.9, 0.06, 'white', xf(0, 1.75, -0.98)));
+  for (const s of [1, -1]) {
+    parts.push(decal(3.5, 0.95, rects.deliverySide, xf(s * 1.08, 1.85, -0.98, 0, s * HALF_PI, 0)));
+    parts.push(roundBox(0.28, 0.16, 0.08, 0.03, 'head', xf(s * 0.72, 0.85, 2.66)));
+    parts.push(box(0.16, 0.32, 0.06, 'tail', xf(s * 0.82, 0.82, -2.94)));
+  }
+  // Chassis & bumpers
+  parts.push(box(1.9, 0.26, 5.4, 'darkGrey', xf(0, 0.52, -0.1)));
+  const plate = rects.platesYellow[plateIndex % rects.platesYellow.length];
+  parts.push(decal(0.5, 0.125, plate, xf(0, 0.62, 2.68)));
+  parts.push(decal(0.5, 0.125, plate, xf(0, 0.62, -2.95, 0, Math.PI, 0)));
+  const wheels = [
+    { x: 0.92, y: 0.44, z: 1.85, r: 0.44, w: 0.26, side: 1, steer: true },
+    { x: -0.92, y: 0.44, z: 1.85, r: 0.44, w: 0.26, side: -1, steer: true },
+    { x: 0.92, y: 0.44, z: -1.75, r: 0.44, w: 0.28, side: 1, steer: false },
+    { x: -0.92, y: 0.44, z: -1.75, r: 0.44, w: 0.28, side: -1, steer: false },
+  ];
+  return { geometry: merge(parts), wheels, size: { length: 5.65, width: 2.18, height: 2.85 }, seat: { x: -0.5, y: 1.35, z: 1.85 } };
+}
+
+// ------------------------------------------------------------------------ London Red Double-Decker Bus
+function buildDoubleDecker(rects, index) {
+  const L = 10.2;
+  const zF = L / 2;
+  const zR = -L / 2;
+  const parts = [];
+  // Iconic London red lower & upper decks
+  parts.push(roundBox(2.48, 1.85, L, 0.08, 'londonRed', xf(0, 1.35, 0)));
+  parts.push(roundBox(2.44, 1.95, L - 0.12, 0.1, 'londonRed', xf(0, 3.25, -0.04)));
+  // Glazed window bands lower + upper
+  for (const s of [1, -1]) {
+    parts.push(box(0.03, 0.82, L - 0.9, 'glass', xf(s * 1.24, 1.65, 0)));
+    parts.push(box(0.03, 0.86, L - 0.9, 'glass', xf(s * 1.22, 3.45, -0.04)));
+    parts.push(decal(3.6, 0.48, rects.ksrtcSide, xf(s * 1.26, 2.38, 0.4, 0, s * HALF_PI, 0)));
+    parts.push(roundBox(0.32, 0.18, 0.08, 0.03, 'head', xf(s * 0.84, 0.82, zF - 0.01)));
+    parts.push(box(0.16, 0.36, 0.06, 'tail', xf(s * 0.96, 1.18, zR + 0.01)));
+  }
+  // Front windshields & route destination board
+  parts.push(roundBox(2.15, 1.05, 0.06, 0.04, 'glass', xf(0, 1.68, zF - 0.01)));
+  parts.push(roundBox(2.1, 0.92, 0.06, 0.04, 'glass', xf(0, 3.46, zF - 0.07)));
+  const board = rects.boards[index % rects.boards.length];
+  parts.push(decal(1.9, 0.28, board, xf(0, 2.58, zF + 0.02)));
+  parts.push(roundBox(2.52, 0.24, 0.2, 0.04, 'darkGrey', xf(0, 0.56, zF - 0.06)));
+  parts.push(roundBox(2.52, 0.24, 0.2, 0.04, 'darkGrey', xf(0, 0.56, zR + 0.06)));
+  const plate = rects.platesYellow[index % rects.platesYellow.length];
+  parts.push(decal(0.56, 0.14, plate, xf(0, 0.56, zF + 0.05)));
+  parts.push(decal(0.56, 0.14, plate, xf(0, 0.88, zR - 0.03, 0, Math.PI, 0)));
+  const axles = [zF - 2.0, zR + 2.7];
+  const wheels = [];
+  for (const [i, z] of axles.entries()) for (const s of [1, -1]) wheels.push({ x: s * 1.1, y: 0.5, z, r: 0.5, w: 0.3, side: s, steer: i === 0 });
+  return { geometry: merge(parts), wheels, size: { length: L, width: 2.52, height: 4.3 }, seat: { x: 0.72, y: 1.4, z: zF - 1.1 } };
 }
 
 // ------------------------------------------------------------------------ auto rickshaw
@@ -232,6 +516,7 @@ function buildBus(rects, livery, index) {
   const zF = L / 2;
   const zR = -L / 2;
   const ksrtc = livery === 'ksrtc';
+  const nyc = livery === 'nyc_bus';
   const shape = {
     top: [[zR, 3.08], [zR + 0.7, 3.14], [zF - 0.7, 3.14], [zF, 3.08]],
     belt: [[zR, 1.42], [zF, 1.42]],
@@ -244,25 +529,25 @@ function buildBus(rects, livery, index) {
       pillarWidth: 0.12,
     },
     nose: 0.22,
-    capSurface: ksrtc ? 'ksrtcRed' : 'paint',
+    capSurface: ksrtc ? 'ksrtcRed' : nyc ? 'white' : 'paint',
     edgeDrop: 0.52,
     roofInset: 0.9,
     sill: 0.06,
     crown: 0.06,
     bumper: 0.12,
-    roofSurface: ksrtc ? 'cream' : null,
-    lowerSurface: ksrtc ? 'ksrtcRed' : null,
-    stripe: ksrtc ? 'ksrtcRed' : null,
-    pillarSurface: ksrtc ? 'ksrtcRed' : 'paint',
+    roofSurface: ksrtc ? 'cream' : nyc ? 'white' : null,
+    lowerSurface: ksrtc ? 'ksrtcRed' : nyc ? 'nycBlue' : null,
+    stripe: ksrtc ? 'ksrtcRed' : nyc ? 'nycBlue' : null,
+    pillarSurface: ksrtc ? 'ksrtcRed' : nyc ? 'white' : 'paint',
   };
   for (let z = zR + 1.1; z < zF - 0.9; z += 1.12) shape.zones.pillars.push(z);
   const body = loftBody(shape);
   const parts = [body];
   const sideY = 1.12;
-  if (ksrtc) {
-    // Cream band under the windows with the corporation's name.
+  if (ksrtc || nyc) {
+    // Cream / MTA stripe band under the windows with transit authority branding.
     for (const s of [1, -1]) {
-      parts.push(box(0.014, 0.2, L - 1.2, 'cream', xf(s * 1.254, 1.27, 0)));
+      parts.push(box(0.014, 0.2, L - 1.2, nyc ? 'white' : 'cream', xf(s * 1.254, 1.27, 0)));
       parts.push(decal(3.4, 0.5, rects.ksrtcSide, xf(s * 1.262, sideY - 0.28, 0.6, 0, s * HALF_PI, 0)));
       parts.push(decal(2.4, 0.36, rects.ksrtcType, xf(s * 1.262, sideY - 0.28, -2.9, 0, s * HALF_PI, 0)));
     }
@@ -423,15 +708,22 @@ function buildScooter(rects, plateIndex, withRider) {
 
 // --------------------------------------------------------------------------- catalogue
 export function buildModel(type, rects, variant = 0) {
+  if (SHAPES[type]) {
+    return buildCar(type, rects, variant * 3 + (type.charCodeAt(0) % 5));
+  }
   switch (type) {
-    case 'hatchback':
-    case 'sedan':
-    case 'suv':
-      return buildCar(type, rects, variant * 3 + { hatchback: 0, sedan: 1, suv: 2 }[type]);
+    case 'jeep':
+      return buildJeep(rects, variant + 1);
+    case 'delivery_truck':
+      return buildDeliveryTruck(rects, variant + 2);
+    case 'double_decker':
+      return buildDoubleDecker(rects, variant);
     case 'auto':
       return buildAuto(rects, variant);
     case 'ksrtc':
       return buildBus(rects, 'ksrtc', variant);
+    case 'nyc_bus':
+      return buildBus(rects, 'nyc_bus', variant + 1);
     case 'bus':
       return buildBus(rects, 'private', variant + 2);
     case 'motorcycle':

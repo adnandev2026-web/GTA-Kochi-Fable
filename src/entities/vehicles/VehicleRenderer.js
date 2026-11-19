@@ -4,21 +4,37 @@
 import * as THREE from 'three';
 import { buildVehicleAtlas } from './atlas.js';
 import { buildModel, buildWheel } from './models.js';
+import { CITY_POIS } from '../../world/layout.js';
 
 const CAPACITY = {
-  hatchback: 72,
+  hatchback: 64,
   sedan: 52,
   suv: 52,
-  auto: 56,
+  auto: 52,
   ksrtc: 14,
   bus: 14,
   motorcycle: 36,
   scooter: 36,
   motorcycle_r: 40,
   scooter_r: 40,
+  jeep: 32,
+  kei_car: 48,
+  jdm_sedan: 44,
+  jp_taxi: 40,
+  commuter_van: 32,
+  delivery_truck: 24,
+  double_decker: 14,
+  black_cab: 40,
+  eu_hatchback: 48,
+  nyc_taxi: 48,
+  nyc_bus: 14,
+  muscle_car: 40,
+  supercar: 40,
+  rta_taxi: 40,
+  desert_4x4: 44,
 };
 const VARIANTS = 2;
-const WHEEL_CAPACITY = 900;
+const WHEEL_CAPACITY = 1400;
 
 const _m = new THREE.Matrix4();
 const _w = new THREE.Matrix4();
@@ -168,7 +184,7 @@ export class VehicleVisual {
 export class VehicleRenderer {
   constructor(scene, assets) {
     this.scene = scene;
-    const atlas = buildVehicleAtlas(assets.maxAniso);
+    const atlas = buildVehicleAtlas(assets.maxAniso, CITY_POIS.cityId || 'kochi');
     this.atlas = atlas;
     this.material = makeVehicleMaterial(atlas.texture);
     this.pools = {};

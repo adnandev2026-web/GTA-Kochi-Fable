@@ -1,7 +1,8 @@
-// Handling and presentation data per vehicle type. Speeds in m/s, accelerations in m/s^2.
+// Handling and presentation data per vehicle type across all supported global cities.
+// Speeds in m/s, accelerations in m/s^2.
 
 export const PAINTS = [
-  [0xf2f2ee, 30], // white - by far the most common colour on Kerala roads
+  [0xf2f2ee, 30], // white
   [0xc3c6c9, 16], // silver
   [0x6d7075, 10], // grey
   [0x16171a, 8], // black
@@ -9,7 +10,7 @@ export const PAINTS = [
   [0x1f3f78, 7], // blue
   [0x5a3a26, 4], // brown
   [0x2f6f78, 3], // teal
-  [0xb9752b, 3], // orange bronze
+  [0xb9752b, 3], // bronze
 ];
 
 export const BIKE_PAINTS = [
@@ -27,6 +28,42 @@ export const BUS_PAINTS = [
   [0xd9d9d4, 5],
   [0x8d2230, 5],
   [0xd88418, 3],
+];
+
+export const SUPERCAR_PAINTS = [
+  [0xdc2626, 8], // Rosso Corsa
+  [0xfacc15, 7], // Giallo Modena
+  [0xf8fafc, 7], // Pearl White
+  [0x0f172a, 6], // Carbon Black
+  [0x0284c7, 5], // Azure Blue
+  [0xf97316, 4], // Papaya Orange
+  [0x10b981, 3], // Emerald Metallic
+];
+
+export const MUSCLE_PAINTS = [
+  [0x1e3a8a, 8],
+  [0x991b1b, 8],
+  [0x18181b, 8],
+  [0xea580c, 5],
+  [0xf8fafc, 5],
+  [0x047857, 4],
+];
+
+export const JEEP_PAINTS = [
+  [0x2d3a24, 10], // olive drab
+  [0x18181b, 8], // matte black
+  [0x7f1d1d, 6], // maroon
+  [0xf2f2ee, 6], // white
+  [0x78350f, 4], // copper brown
+];
+
+export const KEI_PAINTS = [
+  [0xf8fafc, 12],
+  [0xe2e8f0, 8],
+  [0xbae6fd, 6],
+  [0xfef08a, 5],
+  [0xbbf7d0, 5],
+  [0x334155, 4],
 ];
 
 export const SHIRTS = [0xf2f2ee, 0x9db7d6, 0x2f4f7a, 0xb84a3a, 0x4d7a4d, 0xd9c27a, 0x222326, 0x7a4d8a];
@@ -156,9 +193,236 @@ export const VEHICLES = {
     traffic: 0.85,
     lean: 0.5,
   },
+  jeep: {
+    label: 'Malabar 4x4 Jeep',
+    accel: 5.8,
+    top: 39,
+    brake: 14,
+    reverse: 8.5,
+    steer: 0.58,
+    wheelbase: 2.48,
+    grip: 9.8,
+    radius: 0.9,
+    camera: { dist: 6.8, height: 2.65 },
+    paints: JEEP_PAINTS,
+    engine: { base: 50, range: 135, rough: true },
+    traffic: 0.92,
+  },
+  kei_car: {
+    label: 'Tokyo Kei Box',
+    accel: 5.2,
+    top: 34,
+    brake: 15,
+    reverse: 8,
+    steer: 0.64,
+    wheelbase: 2.36,
+    grip: 10.2,
+    radius: 0.78,
+    camera: { dist: 5.9, height: 2.35 },
+    paints: KEI_PAINTS,
+    engine: { base: 72, range: 185 },
+    traffic: 0.94,
+  },
+  jdm_sedan: {
+    label: 'JDM Sport Sedan',
+    accel: 7.9,
+    top: 56,
+    brake: 17,
+    reverse: 10,
+    steer: 0.57,
+    wheelbase: 2.7,
+    grip: 11.8,
+    radius: 0.88,
+    camera: { dist: 7.0, height: 2.25 },
+    paints: PAINTS,
+    engine: { base: 64, range: 205 },
+    traffic: 1.05,
+  },
+  jp_taxi: {
+    label: 'Tokyo Taxi',
+    accel: 6.1,
+    top: 44,
+    brake: 15,
+    reverse: 9,
+    steer: 0.58,
+    wheelbase: 2.68,
+    grip: 10.6,
+    radius: 0.87,
+    camera: { dist: 6.9, height: 2.35 },
+    paints: [[0x0d5c33, 6], [0x141414, 5], [0x1d4ed8, 3]],
+    engine: { base: 56, range: 160 },
+    traffic: 0.98,
+  },
+  commuter_van: {
+    label: 'Commuter Van',
+    accel: 4.9,
+    top: 38,
+    brake: 13,
+    reverse: 7.5,
+    steer: 0.54,
+    wheelbase: 2.95,
+    grip: 9.2,
+    radius: 0.95,
+    camera: { dist: 7.6, height: 2.9 },
+    paints: [[0xf4f4f0, 10], [0xc3c6c9, 6], [0x1f3f78, 4], [0x18181b, 3]],
+    engine: { base: 46, range: 130 },
+    traffic: 0.9,
+  },
+  delivery_truck: {
+    label: 'Box Delivery Truck',
+    accel: 3.6,
+    top: 31,
+    brake: 10.5,
+    reverse: 5.5,
+    steer: 0.5,
+    wheelbase: 3.6,
+    grip: 8.2,
+    radius: 1.12,
+    camera: { dist: 9.2, height: 3.6 },
+    paints: [[0xf8fafc, 10], [0xe2e8f0, 5], [0x1e40af, 3]],
+    engine: { base: 38, range: 105, rough: true },
+    traffic: 0.82,
+    heavy: true,
+  },
+  double_decker: {
+    label: 'London Double-Decker',
+    accel: 2.3,
+    top: 23,
+    brake: 8.5,
+    reverse: 4,
+    steer: 0.5,
+    wheelbase: 5.7,
+    grip: 7.5,
+    radius: 1.3,
+    camera: { dist: 14.0, height: 6.0 },
+    paints: [[0xffffff, 1]],
+    engine: { base: 32, range: 85, rough: true },
+    traffic: 0.78,
+    heavy: true,
+  },
+  black_cab: {
+    label: 'London Black Cab',
+    accel: 5.5,
+    top: 40,
+    brake: 14.5,
+    reverse: 8.5,
+    steer: 0.68,
+    wheelbase: 2.65,
+    grip: 10.5,
+    radius: 0.88,
+    camera: { dist: 6.7, height: 2.5 },
+    paints: [[0x141518, 1]],
+    engine: { base: 52, range: 145 },
+    traffic: 0.95,
+  },
+  eu_hatchback: {
+    label: 'Euro Hot-Hatch',
+    accel: 7.2,
+    top: 48,
+    brake: 16,
+    reverse: 9.5,
+    steer: 0.62,
+    wheelbase: 2.48,
+    grip: 11.4,
+    radius: 0.86,
+    camera: { dist: 6.4, height: 2.3 },
+    paints: PAINTS,
+    engine: { base: 64, range: 190 },
+    traffic: 1.02,
+  },
+  nyc_taxi: {
+    label: 'NYC Yellow Cab',
+    accel: 6.2,
+    top: 45,
+    brake: 15,
+    reverse: 9,
+    steer: 0.57,
+    wheelbase: 2.68,
+    grip: 10.5,
+    radius: 0.87,
+    camera: { dist: 6.9, height: 2.35 },
+    paints: [[0xffffff, 1]],
+    engine: { base: 56, range: 165 },
+    traffic: 0.98,
+  },
+  nyc_bus: {
+    label: 'MTA NYC Transit Bus',
+    accel: 2.7,
+    top: 25,
+    brake: 9,
+    reverse: 4,
+    steer: 0.52,
+    wheelbase: 5.7,
+    grip: 8,
+    radius: 1.28,
+    camera: { dist: 12.5, height: 4.6 },
+    paints: [[0xffffff, 1]],
+    engine: { base: 34, range: 92, rough: true },
+    traffic: 0.82,
+    heavy: true,
+  },
+  muscle_car: {
+    label: 'NYC V8 Muscle',
+    accel: 8.4,
+    top: 60,
+    brake: 16.5,
+    reverse: 10,
+    steer: 0.54,
+    wheelbase: 2.74,
+    grip: 10.4,
+    radius: 0.89,
+    camera: { dist: 7.1, height: 2.25 },
+    paints: MUSCLE_PAINTS,
+    engine: { base: 44, range: 185, rough: true },
+    traffic: 1.04,
+  },
+  supercar: {
+    label: 'Dubai Hypercar',
+    accel: 10.5,
+    top: 74,
+    brake: 20,
+    reverse: 12,
+    steer: 0.58,
+    wheelbase: 2.66,
+    grip: 13.5,
+    radius: 0.9,
+    camera: { dist: 6.9, height: 2.1 },
+    paints: SUPERCAR_PAINTS,
+    engine: { base: 74, range: 260 },
+    traffic: 1.08,
+  },
+  rta_taxi: {
+    label: 'Dubai RTA Taxi',
+    accel: 6.4,
+    top: 47,
+    brake: 15.5,
+    reverse: 9.5,
+    steer: 0.57,
+    wheelbase: 2.68,
+    grip: 10.8,
+    radius: 0.87,
+    camera: { dist: 6.9, height: 2.35 },
+    paints: [[0xffffff, 1]],
+    engine: { base: 56, range: 165 },
+    traffic: 1.0,
+  },
+  desert_4x4: {
+    label: 'Desert Patrol 4x4',
+    accel: 7.0,
+    top: 52,
+    brake: 15,
+    reverse: 9.5,
+    steer: 0.55,
+    wheelbase: 2.8,
+    grip: 10.4,
+    radius: 0.96,
+    camera: { dist: 7.5, height: 2.85 },
+    paints: [[0xf8fafc, 12], [0x18181b, 8], [0xc3c6c9, 6], [0xd4b483, 5]],
+    engine: { base: 44, range: 150 },
+    traffic: 1.02,
+  },
 };
 
-// What the traffic system spawns and how often.
 export const TRAFFIC_MIX = [
   ['hatchback', 22],
   ['sedan', 12],

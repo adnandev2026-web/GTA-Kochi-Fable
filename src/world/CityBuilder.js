@@ -11,7 +11,7 @@ import { Landmarks } from './landmarks/Landmarks.js';
 import { Props } from './Props.js';
 import { SURF } from './SurfaceMap.js';
 import { buildFacades, buildShopAtlas, buildHoardingAtlas, BAY, FLOOR, SHOP_COLS, SHOP_ROWS } from './FacadeTextures.js';
-import { CORE } from './layout.js';
+import { CITY_POIS, CORE } from './layout.js';
 import { RNG } from '../utils/rng.js';
 import { clamp, lerp } from '../utils/math.js';
 
@@ -62,9 +62,10 @@ export class CityBuilder {
   /** Textures and the shared material. Must run before anything draws into the city. */
   prepare() {
     const a = this.assets;
+    const cityId = CITY_POIS.cityId || 'kochi';
     this.facades = buildFacades(a);
-    this.shops = buildShopAtlas(a);
-    this.hoardings = buildHoardingAtlas(a);
+    this.shops = buildShopAtlas(a, cityId);
+    this.hoardings = buildHoardingAtlas(a, cityId);
     this.byStyle = {};
     for (const f of this.facades) (this.byStyle[f.style] ||= []).push(f);
 
@@ -128,11 +129,56 @@ export class CityBuilder {
   }
 
   build() {
-    // Hand-built places first so that the filler city grows around them.
+    // Hand-built places and real OSM footprints first so filler city grows around them.
     this.landmarks.build();
+    this._buildOsmBuildings();
     this._frontages();
     this._interior();
     this.props.build();
+  }
+
+  /** Extrude real OpenStreetMap building footprints loaded from Overpass API. */
+  _buildOsmBuildings() {
+    const list = CITY_POIS.osmBuildings || [];
+    if (!list.length) return;
+    const isKerala = ['kochi', 'pookkottumpadam', 'kozhikkode', 'trivandrum'].includes(CITY_POIS.cityId);
+    for (const b of list) {
+      if (!b || !Number.isFinite(b.cx) || !Number.isFinite(b.cz)) continue;
+      const w = clamp(b.width || 12, 7, 68);
+      const d = clamp(b.depth || 10, 7, 68);
+      const rot = b.rot || 0;
+      const fr = frame(b.cx, b.cz, Math.sin(rot), Math.cos(rot));
+      if (!this.surface.rectIsFree(b.cx, b.cz, w / 2 + 0.4, d / 2 + 0.4, fr.rot, FREE)) continue;
+      const floors = clamp(Math.round(b.levels || (b.height ? b.height / FLOOR : 2)), 1, 18);
+      if (floors >= 7) {
+        this._tower(fr, w, d, floors);
+      } else if (b.shop || b.amenity) {
+        const facadeKey = floors >= 4 ? (this.rng.chance(0.5) ? 'acp' : 'glass') : 'concrete';
+        this._block(fr, w, d, floors, {
+          facade: this.pickFacade(facadeKey),
+          shops: true,
+          hoarding: floors >= 3 && this.rng.chance(0.35),
+          ledge: 0.45,
+          tanks: isKerala,
+        });
+      } else if (floors >= 3) {
+        const style = floors >= 5 ? 'glass' : this.rng.chance(0.5) ? 'apartment' : 'lodge';
+        this._block(fr, w, d, floors, {
+          facade: this.pickFacade(style),
+          ledge: 0.5,
+          tanks: isKerala,
+          tiledCap: isKerala && floors <= 3 && this.rng.chance(0.45),
+        });
+      } else if (isKerala) {
+        this._house(fr, w, d, floors);
+      } else {
+        this._block(fr, w, d, floors, {
+          facade: this.pickFacade(this.rng.chance(0.5) ? 'lodge' : 'concrete'),
+          shops: this.rng.chance(0.35),
+          ledge: 0.35,
+        });
+      }
+    }
   }
 
   /** Bake every cell into a mesh. Roads and the metro have drawn into the cells as well. */

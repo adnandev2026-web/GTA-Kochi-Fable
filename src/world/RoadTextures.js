@@ -350,6 +350,31 @@ function buildDecalAtlas(assets) {
   arrow(1, 'L');
   arrow(2, 'R');
   arrow(3, 'SL');
+  // Row 3 col 1: compact straight+right arrow for right-hand traffic outer lanes.
+  {
+    const x0 = cell;
+    const y0 = cell * 3;
+    ctx.save();
+    ctx.translate(x0 + cell / 2, y0);
+    ctx.scale(1, 0.5);
+    ctx.fillStyle = WHITE;
+    ctx.fillRect(-13, 130, 26, cell * 2 - 160);
+    ctx.beginPath();
+    ctx.moveTo(0, 24);
+    ctx.lineTo(-52, 144);
+    ctx.lineTo(52, 144);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillRect(-30, 250, 80, 26);
+    ctx.beginPath();
+    ctx.moveTo(116, 263);
+    ctx.lineTo(20, 215);
+    ctx.lineTo(20, 311);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    wear(x0, y0, cell, cell, 18);
+  }
   // Row 3: yellow box junction hatch tile and "SLOW" legend.
   ctx.strokeStyle = YELLOW;
   ctx.lineWidth = 12;
@@ -386,7 +411,7 @@ function buildDecalAtlas(assets) {
     material,
     zebra: uv(0, 0, 1, 1),
     stop: uv(2, 0, 2, 1),
-    arrows: { S: uv(0, 1, 1, 2), L: uv(1, 1, 1, 2), R: uv(2, 1, 1, 2), SL: uv(3, 1, 1, 2) },
+    arrows: { S: uv(0, 1, 1, 2), L: uv(1, 1, 1, 2), R: uv(2, 1, 1, 2), SL: uv(3, 1, 1, 2), SR: uv(1, 3, 1, 1) },
     box: uv(0, 3, 1, 1),
   };
 }
